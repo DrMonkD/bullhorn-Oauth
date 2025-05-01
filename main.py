@@ -129,7 +129,9 @@ def job_board():
 
         html = "<h2>Open Job Listings</h2><ul>"
         for job in jobs:
-            html += f"<li><strong>{job.get('title')}</strong><br>{job.get('publicDescription', '')[:200]}...</li><br>"
+            title = job.get('title', 'Untitled')
+            description = job.get('publicDescription') or ''
+            html += f"<li><strong>{title}</strong><br>{description[:200]}...</li><br>"
         html += "</ul>"
         return html
     except Exception:
