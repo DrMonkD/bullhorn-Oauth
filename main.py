@@ -25,6 +25,11 @@ def index():
       <pre id="result"></pre>
 
       <script>
+        function getCodeFromURL() {
+          const params = new URLSearchParams(window.location.search);
+          return params.get('code');
+        }
+
         async function sendCode() {
           const code = document.getElementById("code").value.trim();
           const result = document.getElementById("result");
@@ -41,6 +46,14 @@ def index():
             result.textContent = JSON.stringify(data, null, 2);
           } catch (err) {
             result.textContent = "Error: " + err;
+          }
+        }
+
+        window.onload = function () {
+          const code = getCodeFromURL();
+          if (code) {
+            document.getElementById("code").value = code;
+            sendCode();
           }
         }
       </script>
@@ -82,5 +95,22 @@ def exchange_code():
         'restUrl': login_data.get('restUrl')
     })
 
+@app.route('/jobs', methods=['POST'])
+def get_jobs():
+    data = request.json
+    bh_token = data.get('BhRestToken')
+    rest_url = data.get('restUrl')
+
+    if not bh_token or not rest_url:
+        return jsonify({'error': 'Missing BhRestToken or restUrl'}), 400
+
+    try:
+        jobs_url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=id,title,publicDescription,dateAdded&count=10&BhRestToken={bh_token}"
+        resp = requests.get(jobs_url)
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
