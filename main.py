@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
+import traceback
 
 app = Flask(__name__)
 CORS(app)  # Allow all origins (safe for testing only)
@@ -113,22 +114,26 @@ def get_jobs():
 
 @app.route('/job-board')
 def job_board():
-    # Hardcoded tokens for demo (replace with secure values or session logic)
     bh_token = "26754_7939010_b8a584da-0f4d-494b-85cc-2dd459a4719c"
     rest_url = "https://rest44.bullhornstaffing.com/rest-services/bu5kp0/"
 
     try:
         jobs_url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=id,title,publicDescription,dateAdded&count=10&BhRestToken={bh_token}"
         resp = requests.get(jobs_url)
-        jobs = resp.json().get('data', [])
+        data = resp.json()
+
+        if not data or 'data' not in data:
+            raise ValueError("No job data returned")
+
+        jobs = data['data']
 
         html = "<h2>Open Job Listings</h2><ul>"
         for job in jobs:
             html += f"<li><strong>{job.get('title')}</strong><br>{job.get('publicDescription', '')[:200]}...</li><br>"
         html += "</ul>"
         return html
-    except Exception as e:
-        return f"<p>Error: {e}</p>", 500
+    except Exception:
+        return f"<pre>{traceback.format_exc()}</pre>", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
