@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "concord-physicia-1733638678528",
+  "private_key_id": "ea85c5a5546dba96a7552a27d644f7b7b3762b65",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCpiwLUoQZJTn3p\nHlrsqAlO1AleJV69ScwmdHNZfISbtosbZ13xkM7tdFHpj4rt4DHmne4tcayiKvLn\nHC4W8qu3mQHA9I88ZVN9r+m0F/FmibEjsFGbQNUInb1jcbaIwK/Xxyu7RVMrJY8G\nG65xVroYoAGzb1zlwLy7I+hrRIKoor3d6qHOyCfg5XpkIc9i7IGRg20dMleirvJm\nur3sbVOgA0tIxApbCeQXMDuf8plkKgmvHowsYugwiOSBrWvpQLvANjEBmIEVgesz\n/2gMRDRK0fidKwtmKBYL6VbY3xfIg/RSdLF1s7bGpmyfBMrPZf+0hO4q0y1cPWVW\n1xJnuDAJAgMBAAECggEABI0X/hu1dr3N6PZY4/3txAkymC2iIawruAOLviT2zVRE\n3y8y6SNlPqAO+9lP1itcw49NP7iLtQ24mAYcYZ7Rh7vqfWLDPpCMwXS5rg0vfHxp\nPidDRYrjvRe46AS7LOgZQE5XKO+HOEMJmBUhpWa516Ph785nPL6kAlUILer4o+yx\nQt0i1WZxlq84nyXpFAkk/KJ2eAx1zbpwZqde+C38muz6yZISaVzC8bOzRHU7AyQD\nixn5NuGFiKIyoKHjRuYTjq5v/fS7ZSarnSfbz8IZ3yz/bM5Ozyh6H+0zLYETx+e4\nC3dCeMmIXnh3P0TsH6VValMqrFm3VzoIDguKNL8qAQKBgQDToCia4PU0S5Ec50UW\nyeT/LzjQsECK0dRwWXwvaqDIvL2TmRl0NjsqzcceHtFw/Sx2yPewuB6AkwA6PX0U\n+96Xk1t4NLIBz52YTbL2ciTyH0JyInS+i6KLFTEwncNz627CwmVVjlffltCHpDk1\nMdJMkpg0YhWSjtGAk1cKMvDPCQKBgQDNF+b1pMVPmpiIEgMRcYaKvzYKsGbabjsT\naMVlbXgsmxVyoZusdClfU5Nka7PXxLxbCk9pEB4S1FLShsKrbkJ2IuMi+GCSImmm\ntMEUfaZjWBJB3EiQYNQCAqQNiT/nrUfXNNl9lYFJ0SonOm8fz1mOlbUjf9paT37X\nsUKpCHOZAQKBgQDMPMiTWMIs+zUMUQKzkJvJz7gkZ8WSdBlzaFlapayQrt7DIMGZ\nD3GgyMH/hryZMC2GYkPxsG/3pGdWzdr2snHLlXJ0m16kMsuknnA2Okj/xz1oS2qi\nLr7rPcOgaNGmATR/D/+eR2b1KWcNUWfIt9F/BwePno21SNJWJVyeQjV3iQKBgGMH\n4JjKOBAJCQ/jCqI4nAuQ6qpcpT1hrprfozknk7iOJdwVFtM9v+BsvaXmr49HSt/2\n6YNEqhDTfy5yrbsTYXojvGNdZVwKy9MYQob/aQFdPGuaz1sPti9GUSrMFBRtQlwz\nA7W1JBmdquoIODI27/p+ZVm/2ZJ0Aj5qNFLkZtUBAoGBAKaQhpVpVnFFvckZIeuO\n0IADSrG+8i1Xr+lEJLrK0Y6ubpCmgLTOU9KBXyUWwPRdwBstsH/lbSw9eiNa3dmp\neyHdSgMmc7LqxApuySoLXzzR/ZXAfX86ORP+VEC/6dIBeKS748XRux9AaqGlkEsf\nT664QNTOmvfmap0l/gB3qXtP\n-----END PRIVATE KEY-----\n",
+  "client_email": "sheetsapi@concord-physicia-1733638678528.iam.gserviceaccount.com",
+  "client_id": "106853804497094969346",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/sheetsapi%40concord-physicia-1733638678528.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
