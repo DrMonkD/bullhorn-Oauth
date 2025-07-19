@@ -144,5 +144,30 @@ def job_board():
     except Exception:
         return f"<pre>{traceback.format_exc()}</pre>", 500
 
+@app.route('/show-jobs')
+def show_jobs():
+    try:
+        with open("tokens.json", "r") as f:
+            tokens = json.load(f)
+
+        bh_token = tokens["BhRestToken"]
+        rest_url = tokens["restUrl"]
+
+        url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=id,title,dateAdded,employmentType,clientCorporation(name)&sort=-dateAdded&count=10&BhRestToken={bh_token}"
+        resp = requests.get(url)
+        jobs = resp.json().get("data", [])
+
+        html = "<h2>Latest Bullhorn Jobs</h2><ul>"
+        for job in jobs:
+            html += f"<li><b>{job['title']}</b> — {job['clientCorporation']['name']}<br><i>{job['employmentType']}</i> | {job['dateAdded']}</li><br>"
+        html += "</ul>"
+
+        return html
+    except Exception as e:
+        return f"<pre>Error:\n{traceback.format_exc()}</pre>", 500
+
+
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
