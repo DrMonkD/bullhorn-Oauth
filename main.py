@@ -57,5 +57,14 @@ def callback():
 def download_tokens():
     return send_file("tokens.json", as_attachment=True)
 
+@app.route('/debug-tokens')
+def debug_tokens():
+    try:
+        with open("tokens.json") as f:
+            return f"<pre>{f.read()}</pre>"
+    except Exception as e:
+        return str(e), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True)
