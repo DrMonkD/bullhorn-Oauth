@@ -4,6 +4,7 @@ from flask_cors import CORS
 import traceback
 import os
 import json
+from auth_utils import get_bullhorn_session
 
 app = Flask(__name__)
 CORS(app)
@@ -113,17 +114,14 @@ def exchange_code():
 @app.route('/show-jobs')
 def show_jobs():
     try:
-        # Use static token values or load from token.json
-        bh_token = "26754_7939010_b72d64ae-b265-44a1-a7cc-03737dc1dac0"
-        rest_url = "https://rest44.bullhornstaffing.com/rest-services/bu5kp0/"
+        session = get_bullhorn_session()
+        bh_token = session["BhRestToken"]
+        rest_url = session["restUrl"]
 
-        # You can adjust `count=50` to get more
         jobs_url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=*&count=20&BhRestToken={bh_token}"
         resp = requests.get(jobs_url)
 
-        # Dump full JSON to browser
         return f"<pre>{resp.text}</pre>"
-
     except Exception as e:
         return f"<pre>Error:\n{traceback.format_exc()}</pre>", 500
 
