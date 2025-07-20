@@ -110,28 +110,23 @@ def exchange_code():
         'restUrl': login_data.get('restUrl')
     })
 
-
 @app.route('/show-jobs')
 def show_jobs():
     try:
-        with open("tokens.json", "r") as f:
-            tokens = json.load(f)
+        # Use static token values or load from token.json
+        bh_token = "26754_7939010_b72d64ae-b265-44a1-a7cc-03737dc1dac0"
+        rest_url = "https://rest44.bullhornstaffing.com/rest-services/bu5kp0/"
 
-        bh_token = tokens["BhRestToken"]
-        rest_url = tokens["restUrl"]
+        # You can adjust `count=50` to get more
+        jobs_url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=*&count=20&BhRestToken={bh_token}"
+        resp = requests.get(jobs_url)
 
-        url = f"{rest_url}search/JobOrder?query=isOpen:1&fields=id,title,dateAdded,employmentType,clientCorporation(name)&sort=-dateAdded&count=10&BhRestToken={bh_token}"
-        resp = requests.get(url)
-        jobs = resp.json().get("data", [])
+        # Dump full JSON to browser
+        return f"<pre>{resp.text}</pre>"
 
-        html = "<h2>Latest Bullhorn Jobs</h2><ul>"
-        for job in jobs:
-            html += f"<li><b>{job['title']}</b> — {job['clientCorporation']['name']}<br><i>{job['employmentType']}</i> | {job['dateAdded']}</li><br>"
-        html += "</ul>"
-
-        return html
-    except Exception:
+    except Exception as e:
         return f"<pre>Error:\n{traceback.format_exc()}</pre>", 500
+
 
 
 if __name__ == '__main__':
