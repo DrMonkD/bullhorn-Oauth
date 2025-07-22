@@ -68,6 +68,31 @@ def index():
     '''
 
 
+@app.route('/oauth/callback')
+def oauth_callback():
+    return '''
+    <script>
+      async function sendCode() {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        if (!code) return;
+
+        const result = await fetch("/exchange", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code })
+        });
+
+        const data = await result.json();
+        console.log("Exchange response:", data);
+        document.body.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      }
+
+      window.onload = sendCode;
+    </script>
+    '''
+
+
 @app.route('/exchange', methods=['POST'])
 def exchange_code():
     data = request.json
