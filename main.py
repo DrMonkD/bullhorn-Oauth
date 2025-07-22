@@ -12,7 +12,7 @@ CORS(app)
 # Load from environment variables (set these in Render)
 CLIENT_ID = os.getenv("BULLHORN_CLIENT_ID", "YOUR_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BULLHORN_CLIENT_SECRET", "YOUR_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI", "https://www.concordphysicians.com/oauth/callback")
+REDIRECT_URI = os.getenv("REDIRECT_URI", "https://bullhorn-oauth-app.onrender.com/oauth/callback")
 
 token_url = 'https://auth.bullhornstaffing.com/oauth/token'
 rest_login_url = 'https://rest.bullhornstaffing.com/rest-services/login?version=2.0&access_token='
