@@ -126,6 +126,5 @@ def show_jobs():
         return f"<pre>Error:\n{traceback.format_exc()}</pre>", 500
 
 
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
