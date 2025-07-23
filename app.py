@@ -76,17 +76,34 @@ def refresh_bhrest_token():
 
 @app.route("/me")
 def get_user():
+    global bhrest_token, rest_url, access_token
+
+    if not access_token:
+        return "❌ Missing access_token. Please reauthorize via /oauth/callback", 401
+
+    print("access_token:", access_token)
+
     refresh_result = refresh_bhrest_token()
     if isinstance(refresh_result, tuple):  # error response
         return refresh_result
+
+    if not bhrest_token or not rest_url:
+        return "❌ BhRestToken or restUrl not available. Please reauthorize.", 400
+
+    print("bhrest_token:", bhrest_token)
+    print("rest_url:", rest_url)
 
     headers = {
         "BhRestToken": bhrest_token
     }
 
-    user_response = requests.get(f"{rest_url}/user/ME", headers=headers)
-    if user_response.status_code != 200:
-        return f"Failed to retrieve user info: {user_response.status_code} - {user_response.text}", 500
+    try:
+        user_response = requests.get(f"{rest_url}/user/ME", headers=headers)
+        user_response.raise_for_status()
+        return user_response.json()
+    except Exception as e:
+        print("Exception during /user/ME:", e)
+        return f"❌ Failed to retrieve user info: {e}", 500
 
     return user_response.json()
 
