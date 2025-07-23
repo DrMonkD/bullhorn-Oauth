@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 CLIENT_ID = "b0c7f986-5620-490d-8364-2e943b3bbd2d"
 CLIENT_SECRET = "j0I9c85nkGSPt6CTOaYnDAtw"
-REDIRECT_URI = "https://bullhorn-oauth-app.onrender.com/oauth/callback"
+REDIRECT_URI = "https://bullhorn-oauth.onrender.com/oauth/callback"
 API_USERNAME = "concordphysician.api"
 
 @app.route("/")
