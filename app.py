@@ -64,6 +64,7 @@ def oauth_callback():
         }, f)
 
     return login_data
+
 @app.route("/me")
 def get_user():
     if not os.path.exists(TOKEN_FILE):
@@ -94,6 +95,7 @@ def get_user():
         return f"❌ Failed to retrieve user info: {user_resp.status_code} - {user_resp.text}", 500
 
     return user_resp.json()
+
 
 
 if __name__ == "__main__":
