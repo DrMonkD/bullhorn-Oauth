@@ -65,7 +65,6 @@ def oauth_callback():
 
     return login_data
 
-
 @app.route("/me")
 def get_user():
     global access_token, bhrest_token, rest_url
@@ -83,11 +82,13 @@ def get_user():
         "BhRestToken": bhrest_token
     }
 
-    response = requests.get(f"{rest_url}/user/ME", headers=headers)
+    # ✅ Correct endpoint
+    response = requests.get(f"{rest_url}find/CorporateUser/ME", headers=headers)
     if response.status_code != 200:
         return f"❌ Failed to retrieve user info: {response.status_code} - {response.text}", 500
 
     return response.json()
+
 
 
 if __name__ == "__main__":
