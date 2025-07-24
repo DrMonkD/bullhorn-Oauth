@@ -64,11 +64,8 @@ def oauth_callback():
         }, f)
 
     return login_data
-
 @app.route("/me")
 def get_user():
-    global access_token, bhrest_token, rest_url
-
     if not os.path.exists(TOKEN_FILE):
         return "❌ No token found. Please authenticate first.", 400
 
@@ -82,13 +79,21 @@ def get_user():
         "BhRestToken": bhrest_token
     }
 
-    # ✅ Correct endpoint
-    response = requests.get(f"{rest_url}find/CorporateUser/ME", headers=headers)
-    if response.status_code != 200:
-        return f"❌ Failed to retrieve user info: {response.status_code} - {response.text}", 500
+    # Step 1: Get current userId
+    settings_resp = requests.get(f"{rest_url}settings", headers=headers)
+    if settings_resp.status_code != 200:
+        return f"❌ Failed to get user settings: {settings_resp.status_code} - {settings_resp.text}", 500
 
-    return response.json()
+    user_id = settings_resp.json().get("userId")
+    if not user_id:
+        return "❌ userId not found in settings response", 500
 
+    # Step 2: Use that ID to fetch user
+    user_resp = requests.get(f"{rest_url}entity/CorporateUser/{user_id}", headers=headers)
+    if user_resp.status_code != 200:
+        return f"❌ Failed to retrieve user info: {user_resp.status_code} - {user_resp.text}", 500
+
+    return user_resp.json()
 
 
 if __name__ == "__main__":
