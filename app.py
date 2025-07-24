@@ -106,6 +106,8 @@ def get_user():
         "BhRestToken": bhrest_token
     }
 
+print("Loaded access_token from file:", access_token)
+
     try:
         user_response = requests.get(f"{rest_url}/user/ME", headers=headers)
         user_response.raise_for_status()
