@@ -74,6 +74,11 @@ def refresh_bhrest_token():
     rest_url = data.get("restUrl")
     return data
 
+print("bhrest_token =", bhrest_token)
+print("rest_url =", rest_url)
+
+
+
 @app.route("/me")
 def get_user():
     global bhrest_token, rest_url, access_token
