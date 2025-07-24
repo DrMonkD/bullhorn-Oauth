@@ -1,5 +1,7 @@
 from flask import Flask, request
 import requests
+import json
+import os
 
 app = Flask(__name__)
 
@@ -8,10 +10,11 @@ CLIENT_ID = "b0c7f986-5620-490d-8364-2e943b3bbd2d"
 CLIENT_SECRET = "j0I9c85nkGSPt6CTOaYnDAtw"
 REDIRECT_URI = "https://bullhorn-oauth.onrender.com/oauth/callback"
 
-# Global storage (for demo; replace with persistent storage in production)
+# Global runtime vars
 access_token = None
 bhrest_token = None
 rest_url = None
+TOKEN_FILE = "tokens.json"
 
 @app.route("/")
 def home():
@@ -25,7 +28,6 @@ def oauth_callback():
     if not code:
         return "❌ Authorization code not found", 400
 
-    # Exchange code for access token
     token_url = "https://auth.bullhornstaffing.com/oauth/token"
     payload = {
         "grant_type": "authorization_code",
@@ -42,10 +44,13 @@ def oauth_callback():
     token_data = response.json()
     access_token = token_data.get("access_token")
 
-    # Immediately refresh BhRestToken
-    refresh_response = refresh_bhrest_token()
-    if isinstance(refresh_response, tuple):  # error response
-        return refresh_response
+    # Save to disk
+    with open(TOKEN_FILE, "w") as f:
+        json.dump({"access_token": access_token}, f)
+
+    refresh_result = refresh_bhrest_token()
+    if isinstance(refresh_result, tuple):
+        return refresh_result
 
     return {
         "access_token": access_token,
@@ -56,8 +61,17 @@ def oauth_callback():
 def refresh_bhrest_token():
     global access_token, bhrest_token, rest_url
 
+    # Load access_token if needed
     if not access_token:
-        return {"error": "Missing access token. Please reauthorize."}, 401
+        if os.path.exists(TOKEN_FILE):
+            try:
+                with open(TOKEN_FILE, "r") as f:
+                    data = json.load(f)
+                    access_token = data.get("access_token")
+            except Exception as e:
+                return {"error": "Failed to read token file", "details": str(e)}, 500
+        else:
+            return {"error": "Missing access token. Please reauthorize."}, 401
 
     login_url = "https://rest.bullhornstaffing.com/rest-services/login"
     params = {
@@ -67,36 +81,26 @@ def refresh_bhrest_token():
 
     response = requests.get(login_url, params=params)
     if response.status_code != 200:
-        return {"error": "Failed to refresh BhRestToken", "details": response.text}, 500
+        return {
+            "error": "Failed to refresh BhRestToken",
+            "details": response.text
+        }, 500
 
     data = response.json()
     bhrest_token = data.get("BhRestToken")
     rest_url = data.get("restUrl")
     return data
 
-print("bhrest_token =", bhrest_token)
-print("rest_url =", rest_url)
-
-
-
 @app.route("/me")
 def get_user():
-    global bhrest_token, rest_url, access_token
-
-    if not access_token:
-        return "❌ Missing access_token. Please reauthorize via /oauth/callback", 401
-
-    print("access_token:", access_token)
+    global access_token, bhrest_token, rest_url
 
     refresh_result = refresh_bhrest_token()
-    if isinstance(refresh_result, tuple):  # error response
+    if isinstance(refresh_result, tuple):
         return refresh_result
 
     if not bhrest_token or not rest_url:
-        return "❌ BhRestToken or restUrl not available. Please reauthorize.", 400
-
-    print("bhrest_token:", bhrest_token)
-    print("rest_url:", rest_url)
+        return "❌ Missing BhRestToken or restUrl", 400
 
     headers = {
         "BhRestToken": bhrest_token
@@ -107,10 +111,7 @@ def get_user():
         user_response.raise_for_status()
         return user_response.json()
     except Exception as e:
-        print("Exception during /user/ME:", e)
         return f"❌ Failed to retrieve user info: {e}", 500
-
-    return user_response.json()
 
 if __name__ == "__main__":
     app.run()
