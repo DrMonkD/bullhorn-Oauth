@@ -1,47 +1,58 @@
 from flask import Flask, redirect, request
-import requests
 import os
+import requests
 import json
-
-from config import *
 
 app = Flask(__name__)
 
+# Read secrets from environment
+CLIENT_ID = os.environ.get("BULLHORN_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("BULLHORN_CLIENT_SECRET")
+REDIRECT_URI = os.environ.get("BULLHORN_REDIRECT_URI")
+
 @app.route("/")
-def home():
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={BULLHORN_CLIENT_ID}&response_type=code&redirect_uri={BULLHORN_REDIRECT_URI}"
-    return redirect(auth_url)
+def start_auth():
+    return redirect(
+        f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    )
 
 @app.route("/oauth/callback")
 def callback():
-    code = request.args.get('code')
-    token_res = requests.post("https://auth.bullhornstaffing.com/oauth/token", data={
-        'grant_type': 'authorization_code',
-        'code': code,
-        'client_id': BULLHORN_CLIENT_ID,
-        'client_secret': BULLHORN_CLIENT_SECRET,
-        'redirect_uri': BULLHORN_REDIRECT_URI
-    }).json()
+    code = request.args.get("code")
 
-    refresh_token = token_res.get("refresh_token")
-    access_token = token_res.get("access_token")
+    # Step 1: Exchange code for access token
+    token_response = requests.post("https://auth.bullhornstaffing.com/oauth/token", data={
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI
+    })
 
-    settings = requests.get("https://rest.bullhornstaffing.com/rest-services/login", params={
+    token_data = token_response.json()
+    access_token = token_data["access_token"]
+    refresh_token = token_data["refresh_token"]
+
+    # Step 2: Get BhRestToken and restUrl
+    settings_response = requests.get("https://rest.bullhornstaffing.com/rest-services/login", params={
         "version": "*",
         "access_token": access_token
-    }).json()
+    })
 
-    token_data = {
-        "refresh_token": refresh_token,
-        "access_token": access_token,
-        "restUrl": settings["restUrl"],
-        "BhRestToken": settings["BhRestToken"]
-    }
+    settings_data = settings_response.json()
+    bh_rest_token = settings_data["BhRestToken"]
+    rest_url = settings_data["restUrl"]
 
+    # Step 3: Save everything
     with open("token_store.json", "w") as f:
-        json.dump(token_data, f)
+        json.dump({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "bh_rest_token": bh_rest_token,
+            "rest_url": rest_url
+        }, f, indent=2)
 
-    return "Token stored! You can now start syncing."
+    return "✅ OAuth success — tokens saved to token_store.json"
 
 if __name__ == "__main__":
     app.run(debug=True)
