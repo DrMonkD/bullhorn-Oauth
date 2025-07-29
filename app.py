@@ -2,7 +2,7 @@ from flask import Flask, redirect, request
 import os
 import requests
 import json
- 
+  
 app = Flask(__name__)
 
 # Read secrets from environment
