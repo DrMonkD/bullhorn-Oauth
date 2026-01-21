@@ -29,7 +29,20 @@ def callback():
         "redirect_uri": REDIRECT_URI
     })
 
+    # Debug: Print the response
+    print(f"Token Response Status: {token_response.status_code}")
+    print(f"Token Response Body: {token_response.text}")
+
     token_data = token_response.json()
+    
+    # Check if there's an error
+    if "error" in token_data:
+        return f"❌ OAuth Error: {token_data.get('error')} - {token_data.get('error_description', 'No description')}", 400
+    
+    # Check if access_token exists
+    if "access_token" not in token_data:
+        return f"❌ Token exchange failed. Response: {token_data}", 400
+
     access_token = token_data["access_token"]
     refresh_token = token_data["refresh_token"]
 
@@ -52,7 +65,7 @@ def callback():
             "rest_url": rest_url
         }, f, indent=2)
 
-    return "✅ OAuth success — tokens saved to token_store.json"
+    return "✅ OAuth success – tokens saved to token_store.json"
 
 if __name__ == "__main__":
     app.run(debug=True)
