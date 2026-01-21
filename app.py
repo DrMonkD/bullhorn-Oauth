@@ -12,20 +12,25 @@ REDIRECT_URI = os.environ.get("BULLHORN_REDIRECT_URI")
 
 @app.route("/")
 def start_auth():
-    print(f"DEBUG - CLIENT_ID: {CLIENT_ID}")
-    print(f"DEBUG - REDIRECT_URI: {REDIRECT_URI}")
+    # Debug logging
+    print(f"CLIENT_ID: {CLIENT_ID}")
+    print(f"CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}")
+    print(f"REDIRECT_URI: {REDIRECT_URI}")
     
-    if not REDIRECT_URI:
-        return "ERROR: BULLHORN_REDIRECT_URI environment variable is not set!", 500
+    # Check if environment variables are set
+    if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
+        return f"ERROR: Missing environment variables!<br>CLIENT_ID: {CLIENT_ID}<br>REDIRECT_URI: {REDIRECT_URI}<br>CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}", 500
     
     auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
-    print(f"DEBUG - Auth URL: {auth_url}")
+    print(f"Redirecting to: {auth_url}")
     
     return redirect(auth_url)
 
 @app.route("/oauth/callback")
 def callback():
     code = request.args.get("code")
+    
+    print(f"Received callback with code: {code}")
 
     # Step 1: Exchange code for access token
     token_response = requests.post("https://auth.bullhornstaffing.com/oauth/token", data={
@@ -36,7 +41,18 @@ def callback():
         "redirect_uri": REDIRECT_URI
     })
 
+    print(f"Token response status: {token_response.status_code}")
+    print(f"Token response body: {token_response.text}")
+
     token_data = token_response.json()
+    
+    # Check for errors
+    if "error" in token_data:
+        return f"ERROR: {token_data.get('error')} - {token_data.get('error_description', 'No description')}", 400
+    
+    if "access_token" not in token_data:
+        return f"ERROR: No access_token in response. Response: {token_data}", 400
+
     access_token = token_data["access_token"]
     refresh_token = token_data["refresh_token"]
 
