@@ -2,6 +2,7 @@ from flask import Flask, redirect, request
 import os
 import requests
 import json
+from urllib.parse import quote
   
 app = Flask(__name__)
 
@@ -18,11 +19,12 @@ def start_auth():
     print(f"REDIRECT_URI: {REDIRECT_URI}")
     
     # Check if any are None
-    if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
-        return f"❌ Missing environment variables! CLIENT_ID: {CLIENT_ID}, REDIRECT_URI: {REDIRECT_URI}, CLIENT_SECRET: {'Set' if CLIENT_SECRET else 'Missing'}", 500
+    if not CLIENT_ID or not CLIENT_SECRET:
+        return f"❌ Missing environment variables! CLIENT_ID: {CLIENT_ID}, CLIENT_SECRET: {'Set' if CLIENT_SECRET else 'Missing'}", 500
     
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
-    print(f"Authorization URL: {auth_url}")
+    # Try WITHOUT redirect_uri parameter first to test
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code"
+    print(f"Authorization URL (without redirect_uri): {auth_url}")
     
     return redirect(auth_url)
 
@@ -30,13 +32,12 @@ def start_auth():
 def callback():
     code = request.args.get("code")
 
-    # Step 1: Exchange code for access token
+    # Step 1: Exchange code for access token (without redirect_uri)
     token_response = requests.post("https://auth.bullhornstaffing.com/oauth/token", data={
         "grant_type": "authorization_code",
         "code": code,
         "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI
+        "client_secret": CLIENT_SECRET
     })
 
     # Debug: Print the response
