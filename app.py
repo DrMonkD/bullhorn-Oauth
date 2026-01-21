@@ -12,9 +12,16 @@ REDIRECT_URI = os.environ.get("BULLHORN_REDIRECT_URI")
 
 @app.route("/")
 def start_auth():
-    return redirect(
-        f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
-    )
+    print(f"DEBUG - CLIENT_ID: {CLIENT_ID}")
+    print(f"DEBUG - REDIRECT_URI: {REDIRECT_URI}")
+    
+    if not REDIRECT_URI:
+        return "ERROR: BULLHORN_REDIRECT_URI environment variable is not set!", 500
+    
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    print(f"DEBUG - Auth URL: {auth_url}")
+    
+    return redirect(auth_url)
 
 @app.route("/oauth/callback")
 def callback():
@@ -52,7 +59,7 @@ def callback():
             "rest_url": rest_url
         }, f, indent=2)
 
-    return "✅ OAuth success — tokens saved to token_store.json"
+    return "✅ OAuth success – tokens saved to token_store.json"
 
 if __name__ == "__main__":
     app.run(debug=True)
