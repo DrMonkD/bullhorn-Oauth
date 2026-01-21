@@ -2,6 +2,7 @@ from flask import Flask, redirect, request
 import os
 import requests
 import json
+from urllib.parse import urlencode
   
 app = Flask(__name__)
 
@@ -21,7 +22,13 @@ def start_auth():
     if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
         return f"ERROR: Missing environment variables!<br>CLIENT_ID: {CLIENT_ID}<br>REDIRECT_URI: {REDIRECT_URI}<br>CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}", 500
     
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    # Build the authorization URL with proper URL encoding
+    params = {
+        'client_id': CLIENT_ID,
+        'response_type': 'code',
+        'redirect_uri': REDIRECT_URI
+    }
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?{urlencode(params)}"
     print(f"Redirecting to: {auth_url}")
     
     return redirect(auth_url)
