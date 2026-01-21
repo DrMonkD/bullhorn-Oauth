@@ -12,9 +12,19 @@ REDIRECT_URI = os.environ.get("BULLHORN_REDIRECT_URI")
 
 @app.route("/")
 def start_auth():
-    return redirect(
-        f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
-    )
+    # Debug: Print environment variables
+    print(f"CLIENT_ID: {CLIENT_ID}")
+    print(f"CLIENT_SECRET: {'*' * len(CLIENT_SECRET) if CLIENT_SECRET else 'None'}")
+    print(f"REDIRECT_URI: {REDIRECT_URI}")
+    
+    # Check if any are None
+    if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
+        return f"❌ Missing environment variables! CLIENT_ID: {CLIENT_ID}, REDIRECT_URI: {REDIRECT_URI}, CLIENT_SECRET: {'Set' if CLIENT_SECRET else 'Missing'}", 500
+    
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    print(f"Authorization URL: {auth_url}")
+    
+    return redirect(auth_url)
 
 @app.route("/oauth/callback")
 def callback():
