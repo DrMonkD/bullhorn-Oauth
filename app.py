@@ -2,7 +2,6 @@ from flask import Flask, redirect, request
 import os
 import requests
 import json
-from urllib.parse import quote
   
 app = Flask(__name__)
 
@@ -13,10 +12,8 @@ REDIRECT_URI = os.environ.get("BULLHORN_REDIRECT_URI")
 
 @app.route("/")
 def start_auth():
-    # URL-encode the redirect_uri parameter
-    encoded_redirect = quote(REDIRECT_URI, safe='')
     return redirect(
-        f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={encoded_redirect}"
+        f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
     )
 
 @app.route("/oauth/callback")
@@ -55,7 +52,7 @@ def callback():
             "rest_url": rest_url
         }, f, indent=2)
 
-    return "✅ OAuth success – tokens saved to token_store.json"
+    return "✅ OAuth success — tokens saved to token_store.json"
 
 if __name__ == "__main__":
     app.run(debug=True)
