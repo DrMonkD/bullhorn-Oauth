@@ -52,12 +52,10 @@ HTML_TEMPLATE = '''
                         <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.refresh_token }}</p>
                     </div>
                     {% endif %}
-                    {% if tokens.rest_url %}
                     <div>
                         <span class="font-medium text-gray-700">REST URL:</span>
-                        <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.rest_url }}</p>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.rest_url if tokens.rest_url else 'Not available - please re-authenticate' }}</p>
                     </div>
-                    {% endif %}
                     <div>
                         <span class="font-medium text-gray-700">Saved:</span>
                         <p class="text-gray-600 text-xs mt-1">{{ tokens.saved_at }}</p>
@@ -205,6 +203,20 @@ def test():
     try:
         rest_url = tokens.get('rest_url')
         access_token = tokens.get('access_token')
+        
+        if not rest_url:
+            return render_template_string(HTML_TEMPLATE, 
+                tokens=tokens, 
+                error=True, 
+                message="REST URL not found in tokens. Please re-authenticate.")
+        
+        # Ensure rest_url has proper format
+        if not rest_url.startswith('http'):
+            rest_url = 'https://' + rest_url
+        
+        # Ensure rest_url ends with /
+        if not rest_url.endswith('/'):
+            rest_url += '/'
         
         response = requests.get(
             f"{rest_url}ping",
