@@ -168,18 +168,41 @@ def callback():
         data = response.json()
         
         if response.ok and 'access_token' in data:
+            # Get REST URL from login endpoint
+            access_token = data.get('access_token')
+            rest_url = data.get('restUrl')
+            
+            # If restUrl not in initial response, we need to call /login to get it
+            if not rest_url:
+                try:
+                    # Try to get REST URL from the login endpoint
+                    login_response = requests.post(
+                        'https://rest.bullhornstaffing.com/rest-services/login',
+                        params={'access_token': access_token, 'version': '*'}
+                    )
+                    login_data = login_response.json()
+                    if login_response.ok and 'restUrl' in login_data:
+                        rest_url = login_data['restUrl']
+                except Exception as e:
+                    print(f"Error getting REST URL: {e}")
+            
             # Save tokens
             tokens = {
-                'access_token': data.get('access_token'),
+                'access_token': access_token,
                 'refresh_token': data.get('refresh_token'),
-                'rest_url': data.get('restUrl'),
+                'rest_url': rest_url,
                 'expires_in': data.get('expires_in')
             }
             save_tokens(tokens)
             
-            return render_template_string(HTML_TEMPLATE, 
-                tokens=tokens, 
-                message="✅ OAuth success – tokens saved to token_store.json")
+            if rest_url:
+                return render_template_string(HTML_TEMPLATE, 
+                    tokens=tokens, 
+                    message="✅ OAuth success – tokens saved to token_store.json")
+            else:
+                return render_template_string(HTML_TEMPLATE, 
+                    tokens=tokens, 
+                    message="⚠️ Tokens saved but REST URL not available. You may need to contact Bullhorn support.")
         else:
             return render_template_string(HTML_TEMPLATE, 
                 error=True, 
