@@ -241,16 +241,41 @@ def test():
         if not rest_url.endswith('/'):
             rest_url += '/'
         
+        # First, establish a session using the access token (if not already stored)
+        bh_rest_token = tokens.get('bh_rest_token')
+        
+        if not bh_rest_token:
+            # Create session from OAuth token
+            login_response = requests.post(
+                f"{rest_url}login",
+                params={'version': '*', 'access_token': access_token}
+            )
+            login_data = login_response.json()
+            
+            if login_response.ok and 'BhRestToken' in login_data:
+                bh_rest_token = login_data['BhRestToken']
+                # Save the session token
+                tokens['bh_rest_token'] = bh_rest_token
+                tokens['rest_url'] = login_data.get('restUrl', rest_url)
+                save_tokens(tokens)
+            else:
+                return render_template_string(HTML_TEMPLATE, 
+                    tokens=tokens, 
+                    error=True, 
+                    message=f"Failed to create session: {login_data}")
+        
+        # Now test with the BhRestToken
         response = requests.get(
             f"{rest_url}ping",
-            headers={'BhRestToken': access_token}
+            params={'BhRestToken': bh_rest_token}
         )
         data = response.json()
         
         if response.ok:
+            expires = datetime.fromtimestamp(data['sessionExpires']/1000).strftime('%Y-%m-%d %H:%M:%S')
             return render_template_string(HTML_TEMPLATE, 
                 tokens=tokens, 
-                message=f"✅ Connection successful! Session expires: {datetime.fromtimestamp(data['sessionExpires']/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+                message=f"✅ Connection successful! Session expires: {expires}")
         else:
             return render_template_string(HTML_TEMPLATE, 
                 tokens=tokens, 
