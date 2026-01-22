@@ -120,6 +120,26 @@ def save_tokens(tokens):
         print(f"Error saving tokens: {e}")
         return False
 
+def refresh_access_token(refresh_token):
+    """Refresh the access token using refresh token"""
+    try:
+        token_url = 'https://auth.bullhornstaffing.com/oauth/token'
+        params = {
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET
+        }
+        response = requests.post(token_url, params=params)
+        data = response.json()
+        
+        if response.ok and 'access_token' in data:
+            return data.get('access_token')
+        return None
+    except Exception as e:
+        print(f"Error refreshing token: {e}")
+        return None
+
 @app.route('/')
 def home():
     """Home page - show status"""
@@ -176,9 +196,11 @@ def callback():
             if not rest_url:
                 try:
                     # Try to get REST URL from the login endpoint
+                    login_url = 'https://rest.bullhornstaffing.com/rest-services/login'
                     login_response = requests.post(
-                        'https://rest.bullhornstaffing.com/rest-services/login',
-                        params={'access_token': access_token, 'version': '*'}
+                        login_url,
+                        params={'access_token': access_token, 'version': '*'},
+                        headers={'Content-Type': 'application/x-www-form-urlencoded'}
                     )
                     login_data = login_response.json()
                     if login_response.ok and 'restUrl' in login_data:
@@ -246,29 +268,91 @@ def test():
         
         if not bh_rest_token:
             # Create session from OAuth token
-            login_response = requests.post(
-                f"{rest_url}login",
-                params={'version': '*', 'access_token': access_token}
-            )
-            login_data = login_response.json()
+            # Try using the standard Bullhorn login endpoint first
+            login_urls = [
+                f"{rest_url}login",  # Try stored rest_url first
+                'https://rest.bullhornstaffing.com/rest-services/login'  # Fallback to standard endpoint
+            ]
             
-            if login_response.ok and 'BhRestToken' in login_data:
-                bh_rest_token = login_data['BhRestToken']
-                # Save the session token
-                tokens['bh_rest_token'] = bh_rest_token
-                tokens['rest_url'] = login_data.get('restUrl', rest_url)
-                save_tokens(tokens)
-            else:
+            login_data = None
+            login_response = None
+            
+            for login_url in login_urls:
+                try:
+                    # Standard Bullhorn approach: access_token as query parameter
+                    login_response = requests.post(
+                        login_url,
+                        params={'version': '*', 'access_token': access_token},
+                        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                        timeout=10
+                    )
+                    login_data = login_response.json()
+                    
+                    if login_response.ok and 'BhRestToken' in login_data:
+                        bh_rest_token = login_data['BhRestToken']
+                        # Update rest_url if we got a new one
+                        if 'restUrl' in login_data:
+                            rest_url = login_data['restUrl']
+                            if not rest_url.endswith('/'):
+                                rest_url += '/'
+                        # Save the session token
+                        tokens['bh_rest_token'] = bh_rest_token
+                        tokens['rest_url'] = rest_url
+                        save_tokens(tokens)
+                        break
+                except Exception as e:
+                    print(f"Error trying login URL {login_url}: {e}")
+                    continue
+            
+            # If we still don't have a token, try refreshing the access token
+            if not bh_rest_token and tokens.get('refresh_token'):
+                refresh_token = tokens.get('refresh_token')
+                new_access_token = refresh_access_token(refresh_token)
+                if new_access_token:
+                    tokens['access_token'] = new_access_token
+                    save_tokens(tokens)
+                    access_token = new_access_token
+                    # Retry login with new token
+                    login_response = requests.post(
+                        'https://rest.bullhornstaffing.com/rest-services/login',
+                        params={'version': '*', 'access_token': access_token},
+                        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                        timeout=10
+                    )
+                    login_data = login_response.json()
+                    if login_response.ok and 'BhRestToken' in login_data:
+                        bh_rest_token = login_data['BhRestToken']
+                        if 'restUrl' in login_data:
+                            rest_url = login_data['restUrl']
+                            if not rest_url.endswith('/'):
+                                rest_url += '/'
+                        tokens['bh_rest_token'] = bh_rest_token
+                        tokens['rest_url'] = rest_url
+                        save_tokens(tokens)
+            
+            # If we still don't have a token, return error
+            if not bh_rest_token:
+                error_msg = login_data.get('errorMessage', str(login_data)) if login_data else 'Unknown error'
+                error_code = login_data.get('errorCode', login_response.status_code if login_response else 'N/A')
                 return render_template_string(HTML_TEMPLATE, 
                     tokens=tokens, 
                     error=True, 
-                    message=f"Failed to create session: {login_data}")
+                    message=f"Failed to create session (HTTP {error_code}): {error_msg}. Response: {login_data}")
         
-        # Now test with the BhRestToken
+        # Now test with the BhRestToken (try as header first, then as param)
+        ping_url = f"{rest_url}ping"
         response = requests.get(
-            f"{rest_url}ping",
-            params={'BhRestToken': bh_rest_token}
+            ping_url,
+            headers={'BhRestToken': bh_rest_token}
         )
+        
+        # If header approach fails, try as query parameter
+        if not response.ok:
+            response = requests.get(
+                ping_url,
+                params={'BhRestToken': bh_rest_token}
+            )
+        
         data = response.json()
         
         if response.ok:
