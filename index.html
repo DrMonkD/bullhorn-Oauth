@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bullhorn OAuth Setup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-lg shadow-xl p-8">
+            <div class="flex items-center gap-3 mb-6">
+                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                </svg>
+                <h1 class="text-3xl font-bold text-gray-800">Bullhorn OAuth Setup</h1>
+            </div>
+
+            <!-- Configuration Section -->
+            <div class="mb-8">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">API Configuration</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Client ID (API ID)</label>
+                        <input type="text" id="clientId" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Enter your Bullhorn Client ID">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Client Secret (Secret Key)</label>
+                        <input type="password" id="clientSecret" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="Enter your Bullhorn Client Secret">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Redirect URI</label>
+                        <input type="text" id="redirectUri" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="https://your-app.onrender.com">
+                    </div>
+
+                    <div id="codeSection" style="display: none;">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Authorization Code (Received)</label>
+                        <input type="text" id="authCode" readonly class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-3 mb-6">
+                <button id="startOAuthBtn" class="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                    Start OAuth Flow
+                </button>
+
+                <button id="exchangeTokenBtn" style="display: none;" class="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                    </svg>
+                    Exchange for Token
+                </button>
+
+                <button id="testConnBtn" style="display: none;" class="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Test Connection
+                </button>
+            </div>
+
+            <!-- Status Messages -->
+            <div id="statusMsg" style="display: none;" class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+                <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-blue-800" id="statusText"></p>
+            </div>
+
+            <div id="errorMsg" style="display: none;" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-red-800" id="errorText"></p>
+            </div>
+
+            <!-- Tokens Display -->
+            <div id="tokensSection" style="display: none;" class="mt-6 p-6 bg-green-50 border border-green-200 rounded-lg">
+                <h3 class="text-lg font-semibold text-green-800 mb-3">OAuth Tokens</h3>
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <span class="font-medium text-gray-700">Access Token:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1" id="accessToken"></p>
+                    </div>
+                    <div id="refreshTokenDiv" style="display: none;">
+                        <span class="font-medium text-gray-700">Refresh Token:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1" id="refreshToken"></p>
+                    </div>
+                    <div id="restUrlDiv" style="display: none;">
+                        <span class="font-medium text-gray-700">REST URL:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1" id="restUrl"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="mt-8 p-6 bg-gray-50 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">Setup Instructions</h3>
+                <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                    <li>Enter your Bullhorn Client ID, Client Secret, and Redirect URI above</li>
+                    <li>Click "Start OAuth Flow" to authenticate with Bullhorn</li>
+                    <li>After authorization, you'll be redirected back with a code</li>
+                    <li>Click "Exchange for Token" to get your access token</li>
+                    <li>Use "Test Connection" to verify everything works</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tokens = {
+            accessToken: '',
+            refreshToken: '',
+            restUrl: ''
+        };
+
+        // Load saved config from localStorage
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedClientId = localStorage.getItem('bullhorn_client_id');
+            const savedRedirectUri = localStorage.getItem('bullhorn_redirect_uri');
+            
+            if (savedClientId) document.getElementById('clientId').value = savedClientId;
+            if (savedRedirectUri) document.getElementById('redirectUri').value = savedRedirectUri;
+
+            // Check for authorization code in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            
+            if (code) {
+                document.getElementById('authCode').value = code;
+                document.getElementById('codeSection').style.display = 'block';
+                document.getElementById('exchangeTokenBtn').style.display = 'flex';
+                showStatus('Authorization code received! Now exchange it for access token.');
+            }
+        });
+
+        // Save config to localStorage
+        function saveConfig() {
+            localStorage.setItem('bullhorn_client_id', document.getElementById('clientId').value);
+            localStorage.setItem('bullhorn_redirect_uri', document.getElementById('redirectUri').value);
+        }
+
+        function showStatus(message) {
+            document.getElementById('statusText').textContent = message;
+            document.getElementById('statusMsg').style.display = 'flex';
+            document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        function showError(message) {
+            document.getElementById('errorText').textContent = message;
+            document.getElementById('errorMsg').style.display = 'flex';
+            document.getElementById('statusMsg').style.display = 'none';
+        }
+
+        // Start OAuth Flow
+        document.getElementById('startOAuthBtn').addEventListener('click', () => {
+            const clientId = document.getElementById('clientId').value.trim();
+            const redirectUri = document.getElementById('redirectUri').value.trim();
+
+            if (!clientId || !redirectUri) {
+                showError('Please enter Client ID and Redirect URI');
+                return;
+            }
+
+            saveConfig();
+
+            const authUrl = `https://auth.bullhornstaffing.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}`;
+            
+            showStatus('Redirecting to Bullhorn authorization...');
+            window.location.href = authUrl;
+        });
+
+        // Exchange Code for Token
+        document.getElementById('exchangeTokenBtn').addEventListener('click', async () => {
+            const clientId = document.getElementById('clientId').value.trim();
+            const clientSecret = document.getElementById('clientSecret').value.trim();
+            const redirectUri = document.getElementById('redirectUri').value.trim();
+            const authCode = document.getElementById('authCode').value.trim();
+
+            if (!authCode || !clientId || !clientSecret || !redirectUri) {
+                showError('Missing required fields for token exchange');
+                return;
+            }
+
+            showStatus('Exchanging authorization code for access token...');
+
+            try {
+                const tokenUrl = 'https://auth.bullhornstaffing.com/oauth/token';
+                const params = new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code: authCode,
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    redirect_uri: redirectUri
+                });
+
+                const response = await fetch(`${tokenUrl}?${params.toString()}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    tokens.accessToken = data.access_token;
+                    tokens.refreshToken = data.refresh_token || '';
+                    tokens.restUrl = data.restUrl || '';
+
+                    document.getElementById('accessToken').textContent = tokens.accessToken;
+                    document.getElementById('tokensSection').style.display = 'block';
+                    
+                    if (tokens.refreshToken) {
+                        document.getElementById('refreshToken').textContent = tokens.refreshToken;
+                        document.getElementById('refreshTokenDiv').style.display = 'block';
+                    }
+                    
+                    if (tokens.restUrl) {
+                        document.getElementById('restUrl').textContent = tokens.restUrl;
+                        document.getElementById('restUrlDiv').style.display = 'block';
+                    }
+
+                    document.getElementById('testConnBtn').style.display = 'flex';
+                    showStatus('Successfully obtained access token!');
+                } else {
+                    showError(`Token exchange failed: ${data.error || data.error_description || 'Unknown error'}`);
+                }
+            } catch (err) {
+                showError(`Network error: ${err.message}`);
+            }
+        });
+
+        // Test Connection
+        document.getElementById('testConnBtn').addEventListener('click', async () => {
+            if (!tokens.accessToken || !tokens.restUrl) {
+                showError('No access token available. Complete OAuth flow first.');
+                return;
+            }
+
+            showStatus('Testing API connection...');
+
+            try {
+                const response = await fetch(`${tokens.restUrl}ping`, {
+                    method: 'GET',
+                    headers: {
+                        'BhRestToken': tokens.accessToken
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(`Connection successful! Session expires at: ${new Date(data.sessionExpires).toLocaleString()}`);
+                } else {
+                    showError(`API test failed: ${JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                showError(`Test connection error: ${err.message}`);
+            }
+        });
+    </script>
+</body>
+</html>
