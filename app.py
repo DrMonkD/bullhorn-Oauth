@@ -218,10 +218,11 @@ ANALYTICS_TEMPLATE = '''
                 // eslint-disable-next-line react-hooks/exhaustive-deps
             }, [year, month]);
             
-            // Helper function to get recruiter name from jobOrder.owner
+            // Helper: get recruiter from Placement.owner or JobSubmission.jobOrder.owner
             const getRecruiterName = (item) => {
-                if (item.jobOrder && item.jobOrder.owner && item.jobOrder.owner.firstName && item.jobOrder.owner.lastName) {
-                    return `${item.jobOrder.owner.firstName} ${item.jobOrder.owner.lastName}`;
+                const o = item.owner || (item.jobOrder && item.jobOrder.owner);
+                if (o && o.firstName != null && o.lastName != null) {
+                    return `${o.firstName} ${o.lastName}`.trim();
                 }
                 return null;
             };
@@ -1055,22 +1056,29 @@ def api_submissions():
         
         url = f"{rest_url}query/JobSubmission"
         
-        fields = [
+        fields_with_owner = [
             'id', 'dateAdded', 'dateLastModified', 'status',
             'candidate(id,firstName,lastName,email,phone)',
             'jobOrder(id,title,clientCorporation(id,name),owner(id,firstName,lastName))',
             'source', 'isDeleted'
         ]
+        fields_no_owner = [
+            'id', 'dateAdded', 'dateLastModified', 'status',
+            'candidate(id,firstName,lastName,email,phone)',
+            'jobOrder(id,title,clientCorporation(id,name))',
+            'source', 'isDeleted'
+        ]
         
-        params = {
+        params_base = {
             'BhRestToken': tokens['bh_rest_token'],
             'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-            'fields': ','.join(fields),
             'orderBy': '-dateAdded',
             'count': 500
         }
         
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params={**params_base, 'fields': ','.join(fields_with_owner)}, timeout=30)
+        if response.status_code == 400:
+            response = requests.get(url, params={**params_base, 'fields': ','.join(fields_no_owner)}, timeout=30)
         response.raise_for_status()
         data = response.json()
         
@@ -1123,22 +1131,31 @@ def api_placements():
         
         url = f"{rest_url}query/Placement"
         
-        fields = [
+        # Placement: use top-level owner; some tenants may not support it
+        fields_with_owner = [
             'id', 'dateAdded', 'dateBegin', 'dateEnd',
             'dateLastModified', 'status', 'payRate', 'billRate',
             'candidate(id,firstName,lastName,email,phone)',
-            'jobOrder(id,title,clientCorporation(id,name),owner(id,firstName,lastName))'
+            'jobOrder(id,title,clientCorporation(id,name))',
+            'owner(id,firstName,lastName)'
+        ]
+        fields_no_owner = [
+            'id', 'dateAdded', 'dateBegin', 'dateEnd',
+            'dateLastModified', 'status', 'payRate', 'billRate',
+            'candidate(id,firstName,lastName,email,phone)',
+            'jobOrder(id,title,clientCorporation(id,name))'
         ]
         
-        params = {
+        params_base = {
             'BhRestToken': tokens['bh_rest_token'],
             'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-            'fields': ','.join(fields),
             'orderBy': '-dateAdded',
             'count': 500
         }
         
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params={**params_base, 'fields': ','.join(fields_with_owner)}, timeout=30)
+        if response.status_code == 400:
+            response = requests.get(url, params={**params_base, 'fields': ','.join(fields_no_owner)}, timeout=30)
         response.raise_for_status()
         data = response.json()
         
