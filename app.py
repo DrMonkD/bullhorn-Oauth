@@ -135,7 +135,7 @@ ANALYTICS_TEMPLATE = '''
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.10.0/umd/Recharts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.0/dist/Recharts.js"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
     <div id="root">
@@ -147,7 +147,17 @@ ANALYTICS_TEMPLATE = '''
     
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } = window.Recharts;
+        
+        // Safely get Recharts components - try multiple ways
+        let RechartsComponents = null;
+        if (typeof window !== 'undefined' && window.Recharts) {
+            RechartsComponents = window.Recharts;
+        } else if (typeof Recharts !== 'undefined') {
+            RechartsComponents = Recharts;
+        }
+        
+        const hasRecharts = RechartsComponents !== null;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } = RechartsComponents || {};
 
         function AnalyticsDashboard() {
             const [submissions, setSubmissions] = useState([]);
@@ -519,47 +529,53 @@ ANALYTICS_TEMPLATE = '''
                                 </div>
                                 
                                 {/* Charts */}
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                                    {/* Bar Chart */}
-                                    <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements</h3>
-                                        <ResponsiveContainer width="100%" height={300}>
-                                            <BarChart data={chartData}>
-                                                <CartesianGrid strokeDasharray="3 3" />
-                                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                <YAxis />
-                                                <Tooltip />
-                                                <Legend />
-                                                <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                <Bar dataKey="placements" fill="#10b981" name="Placements" />
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                {hasRecharts ? (
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                                        {/* Bar Chart */}
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements</h3>
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <BarChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" />
+                                                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                                    <YAxis />
+                                                    <Tooltip />
+                                                    <Legend />
+                                                    <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
+                                                    <Bar dataKey="placements" fill="#10b981" name="Placements" />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        
+                                        {/* Pie Chart */}
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions by Recruiter</h3>
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <PieChart>
+                                                    <Pie
+                                                        data={pieData}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        labelLine={false}
+                                                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                                        outerRadius={100}
+                                                        fill="#8884d8"
+                                                        dataKey="value"
+                                                    >
+                                                        {pieData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        </div>
                                     </div>
-                                    
-                                    {/* Pie Chart */}
-                                    <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions by Recruiter</h3>
-                                        <ResponsiveContainer width="100%" height={300}>
-                                            <PieChart>
-                                                <Pie
-                                                    data={pieData}
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    labelLine={false}
-                                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                                    outerRadius={100}
-                                                    fill="#8884d8"
-                                                    dataKey="value"
-                                                >
-                                                    {pieData.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip />
-                                            </PieChart>
-                                        </ResponsiveContainer>
+                                ) : (
+                                    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                        <p className="text-yellow-800">⚠️ Charts are unavailable. Recharts library failed to load. The table below still shows all data.</p>
                                     </div>
-                                </div>
+                                )}
                                 
                                 {/* Top Performers Table */}
                                 <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -620,9 +636,9 @@ ANALYTICS_TEMPLATE = '''
                 return;
             }
             
-            if (typeof window.Recharts === 'undefined') {
-                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: Recharts is not loaded</p></div>';
-                return;
+            // Recharts is optional - warn but don't block
+            if (typeof window.Recharts === 'undefined' && typeof Recharts === 'undefined') {
+                console.warn('Recharts library not loaded - charts will be disabled');
             }
             
             console.log('Rendering AnalyticsDashboard...');
