@@ -190,8 +190,8 @@ ANALYTICS_TEMPLATE = '''
             const recruiters = useMemo(() => {
                 const recruiterSet = new Set();
                 [...submissions, ...placements].forEach(item => {
-                    if (item.owner && item.owner.firstName && item.owner.lastName) {
-                        const name = `${item.owner.firstName} ${item.owner.lastName}`;
+                    if (item.addedBy && item.addedBy.firstName && item.addedBy.lastName) {
+                        const name = `${item.addedBy.firstName} ${item.addedBy.lastName}`;
                         recruiterSet.add(name);
                     }
                 });
@@ -202,8 +202,8 @@ ANALYTICS_TEMPLATE = '''
             const filteredSubmissions = useMemo(() => {
                 if (selectedRecruiter === 'All') return submissions;
                 return submissions.filter(sub => {
-                    if (!sub.owner) return false;
-                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim();
+                    if (!sub.addedBy) return false;
+                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim();
                     return name === selectedRecruiter;
                 });
             }, [submissions, selectedRecruiter]);
@@ -211,8 +211,8 @@ ANALYTICS_TEMPLATE = '''
             const filteredPlacements = useMemo(() => {
                 if (selectedRecruiter === 'All') return placements;
                 return placements.filter(place => {
-                    if (!place.owner) return false;
-                    const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim();
+                    if (!place.addedBy) return false;
+                    const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim();
                     return name === selectedRecruiter;
                 });
             }, [placements, selectedRecruiter]);
@@ -224,8 +224,8 @@ ANALYTICS_TEMPLATE = '''
                 const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
                 const uniqueRecruiters = new Set();
                 [...filteredSubmissions, ...filteredPlacements].forEach(item => {
-                    if (item.owner && item.owner.firstName && item.owner.lastName) {
-                        const name = `${item.owner.firstName} ${item.owner.lastName}`;
+                    if (item.addedBy && item.addedBy.firstName && item.addedBy.lastName) {
+                        const name = `${item.addedBy.firstName} ${item.addedBy.lastName}`;
                         uniqueRecruiters.add(name);
                     }
                 });
@@ -244,8 +244,8 @@ ANALYTICS_TEMPLATE = '''
                     const recruiterMap = new Map();
                     
                     filteredSubmissions.forEach(sub => {
-                        if (!sub.owner) return;
-                        const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                        if (!sub.addedBy) return;
+                        const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
                         if (!recruiterMap.has(name)) {
                             recruiterMap.set(name, { name, submissions: 0, placements: 0 });
                         }
@@ -253,8 +253,8 @@ ANALYTICS_TEMPLATE = '''
                     });
                     
                     filteredPlacements.forEach(place => {
-                        if (!place.owner) return;
-                        const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim() || 'Unknown';
+                        if (!place.addedBy) return;
+                        const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim() || 'Unknown';
                         if (!recruiterMap.has(name)) {
                             recruiterMap.set(name, { name, submissions: 0, placements: 0 });
                         }
@@ -307,8 +307,8 @@ ANALYTICS_TEMPLATE = '''
             const pieData = useMemo(() => {
                 const recruiterMap = new Map();
                 filteredSubmissions.forEach(sub => {
-                    if (!sub.owner) return;
-                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                    if (!sub.addedBy) return;
+                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
                     recruiterMap.set(name, (recruiterMap.get(name) || 0) + 1);
                 });
                 
@@ -322,8 +322,8 @@ ANALYTICS_TEMPLATE = '''
                 const recruiterMap = new Map();
                 
                 filteredSubmissions.forEach(sub => {
-                    if (!sub.owner) return;
-                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                    if (!sub.addedBy) return;
+                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
                     if (!recruiterMap.has(name)) {
                         recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
                     }
@@ -331,8 +331,8 @@ ANALYTICS_TEMPLATE = '''
                 });
                 
                 filteredPlacements.forEach(place => {
-                    if (!place.owner) return;
-                    const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim() || 'Unknown';
+                    if (!place.addedBy) return;
+                    const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim() || 'Unknown';
                     if (!recruiterMap.has(name)) {
                         recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
                     }
@@ -989,7 +989,7 @@ def api_submissions():
             'candidate(id,firstName,lastName,email,phone)',
             'jobOrder(id,title,clientCorporation(id,name))',
             'source', 'isDeleted',
-            'owner(id,firstName,lastName)'
+            'addedBy(id,firstName,lastName)'
         ]
         
         params = {
@@ -1058,7 +1058,7 @@ def api_placements():
             'dateLastModified', 'status', 'payRate', 'billRate',
             'candidate(id,firstName,lastName,email,phone)',
             'jobOrder(id,title,clientCorporation(id,name))',
-            'owner(id,firstName,lastName)'
+            'addedBy(id,firstName,lastName)'
         ]
         
         params = {
