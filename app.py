@@ -102,6 +102,9 @@ HTML_TEMPLATE = '''
                     <div class="bg-white p-2 rounded">GET /api/tokens - Get current tokens</div>
                     <div class="bg-white p-2 rounded">GET /api/submissions?year=YYYY&month=M - Fetch submissions (minimal fields)</div>
                     <div class="bg-white p-2 rounded">GET /api/placements?year=YYYY&month=M - Fetch placements (minimal fields)</div>
+                    <div class="bg-white p-2 rounded">GET /api/analytics/weekly?year=YYYY&month=M - Weekly analytics with recruiter breakdown</div>
+                    <div class="bg-white p-2 rounded">GET /api/analytics/monthly?year=YYYY&month=M - Monthly analytics with recruiter breakdown</div>
+                    <div class="bg-white p-2 rounded">GET /api/analytics/recruiters?year=YYYY&month=M - Recruiter leaderboard</div>
                     <div class="bg-white p-2 rounded">GET /api/meta/JobSubmission - All queryable JobSubmission fields</div>
                     <div class="bg-white p-2 rounded">GET /api/meta/Placement - All queryable Placement fields</div>
                     <div class="bg-white p-2 rounded">POST /api/refresh - Manually refresh tokens</div>
@@ -167,12 +170,20 @@ ANALYTICS_TEMPLATE = '''
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             
-            // Filters (minimal fields: id, dateAdded only — no recruiter data)
+            // View mode: 'basic', 'weekly', 'monthly', 'recruiter'
+            const [viewMode, setViewMode] = useState('basic');
+            
+            // Analytics data
+            const [weeklyData, setWeeklyData] = useState([]);
+            const [monthlyData, setMonthlyData] = useState(null);
+            const [recruitersData, setRecruitersData] = useState([]);
+            
+            // Filters
             const [year, setYear] = useState(new Date().getFullYear());
             const [month, setMonth] = useState(new Date().getMonth() + 1);
             
-            // Fetch data
-            const fetchData = async () => {
+            // Fetch basic data (existing)
+            const fetchBasicData = async () => {
                 setLoading(true);
                 setError(null);
                 try {
@@ -213,9 +224,50 @@ ANALYTICS_TEMPLATE = '''
                 }
             };
             
+            // Fetch analytics data
+            const fetchAnalyticsData = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    if (viewMode === 'weekly') {
+                        const res = await fetch(`/api/analytics/weekly?year=${year}&month=${month}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setWeeklyData(Array.isArray(data) ? data : []);
+                        } else {
+                            throw new Error('Failed to fetch weekly data');
+                        }
+                    } else if (viewMode === 'monthly') {
+                        const res = await fetch(`/api/analytics/monthly?year=${year}&month=${month}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setMonthlyData(data);
+                        } else {
+                            throw new Error('Failed to fetch monthly data');
+                        }
+                    } else if (viewMode === 'recruiter') {
+                        const res = await fetch(`/api/analytics/recruiters?year=${year}&month=${month}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setRecruitersData(data.recruiters || []);
+                        } else {
+                            throw new Error('Failed to fetch recruiter data');
+                        }
+                    }
+                } catch (err) {
+                    setError(err.message || 'Failed to fetch analytics data');
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
             useEffect(() => {
-                fetchData();
-            }, [year, month]);
+                if (viewMode === 'basic') {
+                    fetchBasicData();
+                } else {
+                    fetchAnalyticsData();
+                }
+            }, [year, month, viewMode]);
             
             // Stats (minimal fields: id, dateAdded only)
             const stats = useMemo(() => {
@@ -295,6 +347,53 @@ ANALYTICS_TEMPLATE = '''
                             </a>
                         </div>
                         
+                        {/* View Mode Toggle */}
+                        <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">View Mode</label>
+                            <div className="flex gap-2 flex-wrap">
+                                <button
+                                    onClick={() => setViewMode('basic')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'basic' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    Basic
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('weekly')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'weekly' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    Weekly
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('monthly')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'monthly' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    Monthly
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('recruiter')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'recruiter' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    Recruiter View
+                                </button>
+                            </div>
+                        </div>
+                        
                         {/* Filters */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
                             <div>
@@ -326,17 +425,33 @@ ANALYTICS_TEMPLATE = '''
                         {/* Action Buttons */}
                         <div className="flex gap-3 mb-6">
                             <button
-                                onClick={fetchData}
+                                onClick={() => {
+                                    if (viewMode === 'basic') fetchBasicData();
+                                    else fetchAnalyticsData();
+                                }}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 🔄 Refresh
                             </button>
-                            <button
-                                onClick={exportCSV}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                            >
-                                📥 Export CSV
-                            </button>
+                            {viewMode === 'basic' && (
+                                <button
+                                    onClick={() => {
+                                        const rows = [['Week', 'Submissions', 'Placements']];
+                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements)]));
+                                        const csv = rows.map(row => row.join(',')).join('\\n');
+                                        const blob = new Blob([csv], { type: 'text/csv' });
+                                        const url = window.URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `analytics_${year}_${month}.csv`;
+                                        a.click();
+                                        window.URL.revokeObjectURL(url);
+                                    }}
+                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                >
+                                    📥 Export CSV
+                                </button>
+                            )}
                         </div>
                         
                         {error && (
@@ -352,57 +467,226 @@ ANALYTICS_TEMPLATE = '''
                             </div>
                         ) : (
                             <>
-                                {/* Stat Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                        <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
-                                    </div>
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Total Placements</div>
-                                        <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
-                                    </div>
-                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                        <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
-                                            {stats.conversionRate}%
+                                {viewMode === 'basic' && (
+                                    <>
+                                        {/* Basic View - Existing */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
+                                                <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
+                                            </div>
+                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Total Placements</div>
+                                                <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
+                                            </div>
+                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
+                                                <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
+                                                    {stats.conversionRate}%
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
-                                
-                                {/* Chart: By Week */}
-                                {hasRecharts ? (
-                                    <div className="mb-6">
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements by Week</h3>
-                                            <ResponsiveContainer width="100%" height={300}>
-                                                <BarChart data={chartData}>
-                                                    <CartesianGrid strokeDasharray="3 3" />
-                                                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                    <YAxis />
-                                                    <Tooltip />
-                                                    <Legend />
-                                                    <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                    <Bar dataKey="placements" fill="#10b981" name="Placements" />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                        <p className="text-yellow-800">Charts unavailable (Recharts failed to load). Stats and Export CSV still work.</p>
-                                    </div>
+                                        
+                                        {hasRecharts ? (
+                                            <div className="mb-6">
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements by Week</h3>
+                                                    <ResponsiveContainer width="100%" height={300}>
+                                                        <BarChart data={chartData}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
+                                                            <Bar dataKey="placements" fill="#10b981" name="Placements" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                <p className="text-yellow-800">Charts unavailable (Recharts failed to load).</p>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                                 
-                                {/* Explore API: meta endpoints */}
+                                {viewMode === 'weekly' && (
+                                    <>
+                                        {/* Weekly View */}
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                            {weeklyData.length > 0 && (() => {
+                                                const totals = weeklyData.reduce((acc, week) => ({
+                                                    submissions: acc.submissions + week.submissions,
+                                                    presented: acc.presented + week.presented,
+                                                    placed: acc.placed + week.placed
+                                                }), { submissions: 0, presented: 0, placed: 0 });
+                                                return (
+                                                    <>
+                                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                            <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
+                                                            <div className="text-3xl font-bold text-blue-600">{totals.submissions}</div>
+                                                        </div>
+                                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                                            <div className="text-sm text-gray-600 mb-1">Total Presented</div>
+                                                            <div className="text-3xl font-bold text-yellow-600">{totals.presented}</div>
+                                                        </div>
+                                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                                            <div className="text-sm text-gray-600 mb-1">Total Placed</div>
+                                                            <div className="text-3xl font-bold text-green-600">{totals.placed}</div>
+                                                        </div>
+                                                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                                            <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
+                                                            <div className={`text-3xl font-bold ${getConversionColor(totals.submissions > 0 ? (totals.placed / totals.submissions * 100) : 0)}`}>
+                                                                {totals.submissions > 0 ? ((totals.placed / totals.submissions * 100).toFixed(1)) : 0}%
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                        
+                                        {hasRecharts && weeklyData.length > 0 && (
+                                            <div className="mb-6">
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Weekly Analytics</h3>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={weeklyData.map(w => ({
+                                                            name: `${w.weekStart.split('-')[1]}/${w.weekStart.split('-')[2]}`,
+                                                            submissions: w.submissions,
+                                                            presented: w.presented,
+                                                            placed: w.placed
+                                                        }))}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
+                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
+                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {weeklyData.length === 0 && !loading && (
+                                            <div className="text-center py-8 text-gray-500">No weekly data available</div>
+                                        )}
+                                    </>
+                                )}
+                                
+                                {viewMode === 'monthly' && monthlyData && (
+                                    <>
+                                        {/* Monthly View */}
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
+                                                <div className="text-3xl font-bold text-blue-600">{monthlyData.submissions}</div>
+                                            </div>
+                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Total Presented</div>
+                                                <div className="text-3xl font-bold text-yellow-600">{monthlyData.presented}</div>
+                                            </div>
+                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Total Placed</div>
+                                                <div className="text-3xl font-bold text-green-600">{monthlyData.placed}</div>
+                                            </div>
+                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
+                                                <div className={`text-3xl font-bold ${getConversionColor(monthlyData.submissions > 0 ? (monthlyData.placed / monthlyData.submissions * 100) : 0)}`}>
+                                                    {monthlyData.submissions > 0 ? ((monthlyData.placed / monthlyData.submissions * 100).toFixed(1)) : 0}%
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {hasRecharts && monthlyData.byRecruiter && monthlyData.byRecruiter.length > 0 && (
+                                            <div className="mb-6">
+                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Monthly Analytics by Recruiter</h3>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={monthlyData.byRecruiter.map(r => ({
+                                                            name: r.name.length > 15 ? r.name.substring(0, 15) + '...' : r.name,
+                                                            submissions: r.submissions,
+                                                            presented: r.presented,
+                                                            placed: r.placed
+                                                        }))}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
+                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
+                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                                
+                                {viewMode === 'recruiter' && (
+                                    <>
+                                        {/* Recruiter Leaderboard */}
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Recruiter Leaderboard</h3>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full">
+                                                    <thead>
+                                                        <tr className="border-b border-gray-200">
+                                                            <th className="text-left py-2 px-4 font-semibold text-gray-700">Recruiter</th>
+                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Submissions</th>
+                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Presented</th>
+                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Placed</th>
+                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Conversion %</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {recruitersData.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="5" className="text-center py-8 text-gray-500">No recruiter data available</td>
+                                                            </tr>
+                                                        ) : (
+                                                            recruitersData.map((rec, idx) => {
+                                                                const conversion = rec.totalSubmissions > 0 
+                                                                    ? (rec.totalPlacements / rec.totalSubmissions * 100).toFixed(1) 
+                                                                    : 0;
+                                                                return (
+                                                                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                                                                        <td className="py-2 px-4 text-gray-800">{rec.name}</td>
+                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalSubmissions}</td>
+                                                        <td className="py-2 px-4 text-right text-gray-700">
+                                                            {(rec.statusBreakdown || {})['Presented'] || 0}
+                                                        </td>
+                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalPlacements}</td>
+                                                                        <td className={`py-2 px-4 text-right ${getConversionColor(parseFloat(conversion))}`}>
+                                                                            {conversion}%
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                                
+                                {/* Explore API section - show in all views */}
                                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Explore API &amp; available fields</h3>
-                                    <p className="text-sm text-gray-600 mb-3">Data uses minimal fields (id, dateAdded) to avoid Bad Request errors. Use meta endpoints to see all queryable fields:</p>
+                                    <p className="text-sm text-gray-600 mb-3">Use meta endpoints to see all queryable fields:</p>
                                     <div className="flex flex-wrap gap-2">
                                         <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
                                         <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
-                                        <a href="/api/submissions?year=2025&month=1" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Submissions (raw)</a>
-                                        <a href="/api/placements?year=2025&month=1" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Placements (raw)</a>
+                                        <a href={`/api/analytics/weekly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Weekly (raw)</a>
+                                        <a href={`/api/analytics/monthly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Monthly (raw)</a>
+                                        <a href={`/api/analytics/recruiters?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
                                     </div>
                                 </div>
                             </>
@@ -736,6 +1020,117 @@ def logout():
             error=True, 
             message=f"Error clearing tokens: {str(e)}")
 
+# ==================== HELPER FUNCTIONS FOR ANALYTICS ====================
+
+def fetch_job_submissions(start_ms, end_ms, include_recruiter=True):
+    """
+    Safely fetch JobSubmission records from Bullhorn.
+    
+    Args:
+        start_ms: Start timestamp in milliseconds
+        end_ms: End timestamp in milliseconds
+        include_recruiter: If True, include sendingUser field
+    
+    Returns:
+        List of submission records or None on error
+    """
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return None
+    
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        
+        url = f"{rest_url}query/JobSubmission"
+        
+        if include_recruiter:
+            fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName)'
+        else:
+            fields = 'id,dateAdded,status'
+        
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+        
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('data', [])
+    except Exception as e:
+        print(f"Error fetching JobSubmissions: {e}")
+        return None
+
+def fetch_placements(start_ms, end_ms, include_recruiter=True):
+    """
+    Safely fetch Placement records from Bullhorn.
+    
+    Args:
+        start_ms: Start timestamp in milliseconds
+        end_ms: End timestamp in milliseconds
+        include_recruiter: If True, include sendingUser field
+    
+    Returns:
+        List of placement records or None on error
+    """
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return None
+    
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        
+        url = f"{rest_url}query/Placement"
+        
+        if include_recruiter:
+            fields = 'id,dateAdded,sendingUser(id,firstName,lastName)'
+        else:
+            fields = 'id,dateAdded'
+        
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+        
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('data', [])
+    except Exception as e:
+        print(f"Error fetching Placements: {e}")
+        return None
+
+def get_recruiter_name(item):
+    """Extract recruiter name from sendingUser field"""
+    if item.get('sendingUser') and item['sendingUser'].get('firstName') and item['sendingUser'].get('lastName'):
+        return f"{item['sendingUser']['firstName']} {item['sendingUser']['lastName']}"
+    return "Unknown"
+
+def get_recruiter_id(item):
+    """Extract recruiter ID from sendingUser field"""
+    if item.get('sendingUser') and item['sendingUser'].get('id'):
+        return item['sendingUser']['id']
+    return None
+
+def get_week_range(date_ms):
+    """Get week start and end dates for a given timestamp"""
+    date = datetime.fromtimestamp(date_ms / 1000)
+    # Get Monday of the week
+    days_since_monday = date.weekday()
+    week_start = date - timedelta(days=days_since_monday)
+    week_end = week_start + timedelta(days=6)
+    return week_start, week_end
+
 # ==================== API ENDPOINTS ====================
 
 @app.route('/api/tokens')
@@ -971,6 +1366,302 @@ def api_meta(entity):
         return jsonify(data)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analytics/weekly')
+def api_analytics_weekly():
+    """Get weekly analytics aggregated by week"""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    year = request.args.get('year', datetime.now().year, type=int)
+    month = request.args.get('month', datetime.now().month, type=int)
+    
+    # Calculate month date range
+    import calendar
+    start_date = datetime(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    start_ms = int(start_date.timestamp() * 1000)
+    end_ms = int(end_date.timestamp() * 1000)
+    
+    try:
+        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
+        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
+        
+        if submissions is None or placements is None:
+            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
+        
+        # Group by week
+        week_map = {}
+        
+        # Process submissions
+        for sub in submissions:
+            if not sub.get('dateAdded'):
+                continue
+            
+            week_start, week_end = get_week_range(sub['dateAdded'])
+            week_key = week_start.strftime('%Y-%m-%d')
+            
+            if week_key not in week_map:
+                week_map[week_key] = {
+                    'weekStart': week_start.strftime('%Y-%m-%d'),
+                    'weekEnd': week_end.strftime('%Y-%m-%d'),
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'byRecruiter': {}
+                }
+            
+            week_data = week_map[week_key]
+            week_data['submissions'] += 1
+            
+            # Check if presented (status is "Presented" or contains "presented")
+            status = sub.get('status', '') or ''
+            status_lower = status.lower()
+            if status_lower == 'presented' or 'presented' in status_lower:
+                week_data['presented'] += 1
+            
+            # Group by recruiter
+            recruiter_id = get_recruiter_id(sub)
+            recruiter_name = get_recruiter_name(sub)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in week_data['byRecruiter']:
+                week_data['byRecruiter'][recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'statusCounts': {}
+                }
+            
+            rec_data = week_data['byRecruiter'][recruiter_key]
+            rec_data['submissions'] += 1
+            
+            status_val = sub.get('status', 'Unknown')
+            if status_lower == 'presented' or 'presented' in status_lower:
+                rec_data['presented'] += 1
+            rec_data['statusCounts'][status_val] = rec_data['statusCounts'].get(status_val, 0) + 1
+        
+        # Process placements (count as "placed")
+        for place in placements:
+            if not place.get('dateAdded'):
+                continue
+            
+            week_start, week_end = get_week_range(place['dateAdded'])
+            week_key = week_start.strftime('%Y-%m-%d')
+            
+            if week_key not in week_map:
+                week_map[week_key] = {
+                    'weekStart': week_start.strftime('%Y-%m-%d'),
+                    'weekEnd': week_end.strftime('%Y-%m-%d'),
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'byRecruiter': {}
+                }
+            
+            week_data = week_map[week_key]
+            week_data['placed'] += 1
+            
+            # Group placement by recruiter
+            recruiter_id = get_recruiter_id(place)
+            recruiter_name = get_recruiter_name(place)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in week_data['byRecruiter']:
+                week_data['byRecruiter'][recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'statusCounts': {}
+                }
+            
+            week_data['byRecruiter'][recruiter_key]['placed'] += 1
+        
+        # Convert to list format
+        result = []
+        for week_key in sorted(week_map.keys()):
+            week_data = week_map[week_key]
+            week_data['byRecruiter'] = list(week_data['byRecruiter'].values())
+            result.append(week_data)
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/monthly')
+def api_analytics_monthly():
+    """Get monthly analytics aggregated for entire month"""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    year = request.args.get('year', datetime.now().year, type=int)
+    month = request.args.get('month', datetime.now().month, type=int)
+    
+    # Calculate month date range
+    import calendar
+    start_date = datetime(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    start_ms = int(start_date.timestamp() * 1000)
+    end_ms = int(end_date.timestamp() * 1000)
+    
+    try:
+        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
+        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
+        
+        if submissions is None or placements is None:
+            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
+        
+        # Aggregate for entire month
+        result = {
+            'monthStart': start_date.strftime('%Y-%m-%d'),
+            'monthEnd': end_date.strftime('%Y-%m-%d'),
+            'submissions': 0,
+            'presented': 0,
+            'placed': 0,
+            'byRecruiter': {}
+        }
+        
+        # Process submissions
+        for sub in submissions:
+            result['submissions'] += 1
+            
+            status = sub.get('status', '') or ''
+            status_lower = status.lower()
+            if status_lower == 'presented' or 'presented' in status_lower:
+                result['presented'] += 1
+            
+            # Group by recruiter
+            recruiter_id = get_recruiter_id(sub)
+            recruiter_name = get_recruiter_name(sub)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in result['byRecruiter']:
+                result['byRecruiter'][recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'statusCounts': {}
+                }
+            
+            rec_data = result['byRecruiter'][recruiter_key]
+            rec_data['submissions'] += 1
+            
+            status_val = sub.get('status', 'Unknown')
+            if status_lower == 'presented' or 'presented' in status_lower:
+                rec_data['presented'] += 1
+            rec_data['statusCounts'][status_val] = rec_data['statusCounts'].get(status_val, 0) + 1
+        
+        # Process placements (count as "placed")
+        for place in placements:
+            result['placed'] += 1
+            
+            # Group placement by recruiter
+            recruiter_id = get_recruiter_id(place)
+            recruiter_name = get_recruiter_name(place)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in result['byRecruiter']:
+                result['byRecruiter'][recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'submissions': 0,
+                    'presented': 0,
+                    'placed': 0,
+                    'statusCounts': {}
+                }
+            
+            result['byRecruiter'][recruiter_key]['placed'] += 1
+        
+        result['byRecruiter'] = list(result['byRecruiter'].values())
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/recruiters')
+def api_analytics_recruiters():
+    """Get recruiter-level analytics for the month"""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    year = request.args.get('year', datetime.now().year, type=int)
+    month = request.args.get('month', datetime.now().month, type=int)
+    
+    # Calculate month date range
+    import calendar
+    start_date = datetime(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    start_ms = int(start_date.timestamp() * 1000)
+    end_ms = int(end_date.timestamp() * 1000)
+    
+    try:
+        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
+        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
+        
+        if submissions is None or placements is None:
+            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
+        
+        recruiter_map = {}
+        
+        # Process submissions
+        for sub in submissions:
+            recruiter_id = get_recruiter_id(sub)
+            recruiter_name = get_recruiter_name(sub)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in recruiter_map:
+                recruiter_map[recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'totalSubmissions': 0,
+                    'totalPlacements': 0,
+                    'statusBreakdown': {}
+                }
+            
+            rec_data = recruiter_map[recruiter_key]
+            rec_data['totalSubmissions'] += 1
+            
+            status = sub.get('status', 'Unknown')
+            rec_data['statusBreakdown'][status] = rec_data['statusBreakdown'].get(status, 0) + 1
+        
+        # Process placements
+        for place in placements:
+            recruiter_id = get_recruiter_id(place)
+            recruiter_name = get_recruiter_name(place)
+            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            
+            if recruiter_key not in recruiter_map:
+                recruiter_map[recruiter_key] = {
+                    'recruiterId': recruiter_id,
+                    'name': recruiter_name,
+                    'totalSubmissions': 0,
+                    'totalPlacements': 0,
+                    'statusBreakdown': {}
+                }
+            
+            recruiter_map[recruiter_key]['totalPlacements'] += 1
+        
+        result = list(recruiter_map.values())
+        result.sort(key=lambda x: x['totalSubmissions'], reverse=True)
+        
+        return jsonify({
+            'year': year,
+            'month': month,
+            'recruiters': result
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
