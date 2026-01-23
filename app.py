@@ -69,7 +69,11 @@ HTML_TEMPLATE = '''
                 </div>
             </div>
 
-            <div class="flex gap-3 mb-6">
+            <div class="flex gap-3 mb-6 flex-wrap">
+                <a href="/analytics" class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2">
+                    <span>📊</span>
+                    Analytics Dashboard
+                </a>
                 <a href="/test" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                     Test Connection
                 </a>
@@ -115,6 +119,479 @@ HTML_TEMPLATE = '''
             </div>
         </div>
     </div>
+</body>
+</html>
+'''
+
+ANALYTICS_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - Bullhorn OAuth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.10.0/umd/Recharts.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } = window.Recharts;
+
+        function AnalyticsDashboard() {
+            const [submissions, setSubmissions] = useState([]);
+            const [placements, setPlacements] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            
+            // Filters
+            const [year, setYear] = useState(new Date().getFullYear());
+            const [month, setMonth] = useState(new Date().getMonth() + 1);
+            const [viewMode, setViewMode] = useState('By Recruiter');
+            const [selectedRecruiter, setSelectedRecruiter] = useState('All');
+            
+            // Fetch data
+            const fetchData = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const [subsRes, placeRes] = await Promise.all([
+                        fetch(`/api/submissions?year=${year}&month=${month}`),
+                        fetch(`/api/placements?year=${year}&month=${month}`)
+                    ]);
+                    
+                    if (!subsRes.ok || !placeRes.ok) {
+                        throw new Error('Failed to fetch data');
+                    }
+                    
+                    const subsData = await subsRes.json();
+                    const placeData = await placeRes.json();
+                    
+                    setSubmissions(subsData.data || []);
+                    setPlacements(placeData.data || []);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            useEffect(() => {
+                fetchData();
+            }, [year, month]);
+            
+            // Get unique recruiters
+            const recruiters = useMemo(() => {
+                const recruiterSet = new Set();
+                [...submissions, ...placements].forEach(item => {
+                    if (item.owner && item.owner.firstName && item.owner.lastName) {
+                        const name = `${item.owner.firstName} ${item.owner.lastName}`;
+                        recruiterSet.add(name);
+                    }
+                });
+                return Array.from(recruiterSet).sort();
+            }, [submissions, placements]);
+            
+            // Filter data by recruiter
+            const filteredSubmissions = useMemo(() => {
+                if (selectedRecruiter === 'All') return submissions;
+                return submissions.filter(sub => {
+                    if (!sub.owner) return false;
+                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim();
+                    return name === selectedRecruiter;
+                });
+            }, [submissions, selectedRecruiter]);
+            
+            const filteredPlacements = useMemo(() => {
+                if (selectedRecruiter === 'All') return placements;
+                return placements.filter(place => {
+                    if (!place.owner) return false;
+                    const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim();
+                    return name === selectedRecruiter;
+                });
+            }, [placements, selectedRecruiter]);
+            
+            // Calculate stats
+            const stats = useMemo(() => {
+                const totalSubmissions = filteredSubmissions.length;
+                const totalPlacements = filteredPlacements.length;
+                const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
+                const uniqueRecruiters = new Set();
+                [...filteredSubmissions, ...filteredPlacements].forEach(item => {
+                    if (item.owner && item.owner.firstName && item.owner.lastName) {
+                        const name = `${item.owner.firstName} ${item.owner.lastName}`;
+                        uniqueRecruiters.add(name);
+                    }
+                });
+                
+                return {
+                    totalSubmissions,
+                    totalPlacements,
+                    conversionRate: parseFloat(conversionRate),
+                    numRecruiters: uniqueRecruiters.size
+                };
+            }, [filteredSubmissions, filteredPlacements]);
+            
+            // Group data for charts
+            const chartData = useMemo(() => {
+                if (viewMode === 'By Recruiter') {
+                    const recruiterMap = new Map();
+                    
+                    filteredSubmissions.forEach(sub => {
+                        if (!sub.owner) return;
+                        const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                        if (!recruiterMap.has(name)) {
+                            recruiterMap.set(name, { name, submissions: 0, placements: 0 });
+                        }
+                        recruiterMap.get(name).submissions++;
+                    });
+                    
+                    filteredPlacements.forEach(place => {
+                        if (!place.owner) return;
+                        const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim() || 'Unknown';
+                        if (!recruiterMap.has(name)) {
+                            recruiterMap.set(name, { name, submissions: 0, placements: 0 });
+                        }
+                        recruiterMap.get(name).placements++;
+                    });
+                    
+                    return Array.from(recruiterMap.values()).sort((a, b) => b.submissions - a.submissions);
+                } else {
+                    // By Week
+                    const weekMap = new Map();
+                    
+                    const getWeekNumber = (dateMs) => {
+                        const date = new Date(dateMs);
+                        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                        const dayNum = d.getUTCDay() || 7;
+                        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+                        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+                        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+                    };
+                    
+                    filteredSubmissions.forEach(sub => {
+                        if (!sub.dateAdded) return;
+                        const week = getWeekNumber(sub.dateAdded);
+                        const key = `Week ${week}`;
+                        if (!weekMap.has(key)) {
+                            weekMap.set(key, { name: key, submissions: 0, placements: 0 });
+                        }
+                        weekMap.get(key).submissions++;
+                    });
+                    
+                    filteredPlacements.forEach(place => {
+                        if (!place.dateAdded) return;
+                        const week = getWeekNumber(place.dateAdded);
+                        const key = `Week ${week}`;
+                        if (!weekMap.has(key)) {
+                            weekMap.set(key, { name: key, submissions: 0, placements: 0 });
+                        }
+                        weekMap.get(key).placements++;
+                    });
+                    
+                    return Array.from(weekMap.values()).sort((a, b) => {
+                        const weekA = parseInt(a.name.replace('Week ', ''));
+                        const weekB = parseInt(b.name.replace('Week ', ''));
+                        return weekA - weekB;
+                    });
+                }
+            }, [filteredSubmissions, filteredPlacements, viewMode]);
+            
+            // Pie chart data (submissions by recruiter)
+            const pieData = useMemo(() => {
+                const recruiterMap = new Map();
+                filteredSubmissions.forEach(sub => {
+                    if (!sub.owner) return;
+                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                    recruiterMap.set(name, (recruiterMap.get(name) || 0) + 1);
+                });
+                
+                return Array.from(recruiterMap.entries())
+                    .map(([name, value]) => ({ name, value }))
+                    .sort((a, b) => b.value - a.value);
+            }, [filteredSubmissions]);
+            
+            // Top performers
+            const topPerformers = useMemo(() => {
+                const recruiterMap = new Map();
+                
+                filteredSubmissions.forEach(sub => {
+                    if (!sub.owner) return;
+                    const name = `${sub.owner.firstName || ''} ${sub.owner.lastName || ''}`.trim() || 'Unknown';
+                    if (!recruiterMap.has(name)) {
+                        recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
+                    }
+                    recruiterMap.get(name).submissions++;
+                });
+                
+                filteredPlacements.forEach(place => {
+                    if (!place.owner) return;
+                    const name = `${place.owner.firstName || ''} ${place.owner.lastName || ''}`.trim() || 'Unknown';
+                    if (!recruiterMap.has(name)) {
+                        recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
+                    }
+                    recruiterMap.get(name).placements++;
+                });
+                
+                return Array.from(recruiterMap.values())
+                    .map(perf => ({
+                        ...perf,
+                        conversionRate: perf.submissions > 0 ? (perf.placements / perf.submissions * 100).toFixed(1) : 0
+                    }))
+                    .sort((a, b) => b.submissions - a.submissions)
+                    .slice(0, 10);
+            }, [filteredSubmissions, filteredPlacements]);
+            
+            // Export CSV
+            const exportCSV = () => {
+                const rows = [
+                    ['Recruiter', 'Submissions', 'Placements', 'Conversion Rate %']
+                ];
+                
+                topPerformers.forEach(perf => {
+                    rows.push([
+                        perf.recruiter,
+                        perf.submissions,
+                        perf.placements,
+                        perf.conversionRate
+                    ]);
+                });
+                
+                const csv = rows.map(row => row.join(',')).join('\\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `analytics_${year}_${month}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            };
+            
+            // Color for conversion rate
+            const getConversionColor = (rate) => {
+                if (rate >= 20) return 'text-green-600 font-semibold';
+                if (rate >= 10) return 'text-yellow-600 font-semibold';
+                return 'text-red-600 font-semibold';
+            };
+            
+            // Pie chart colors
+            const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+            
+            return (
+                <div className="max-w-7xl mx-auto">
+                    <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <span className="text-3xl">📊</span>
+                                <h1 className="text-3xl font-bold text-gray-800">Analytics Dashboard</h1>
+                            </div>
+                            <a href="/" className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                                ← Back to OAuth
+                            </a>
+                        </div>
+                        
+                        {/* Filters */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                <select
+                                    value={year}
+                                    onChange={(e) => setYear(parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    {[2024, 2025, 2026, 2027].map(y => (
+                                        <option key={y} value={y}>{y}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                                <select
+                                    value={month}
+                                    onChange={(e) => setMonth(parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                                        <option key={m} value={m}>{new Date(2024, m - 1).toLocaleString('default', { month: 'long' })}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">View Mode</label>
+                                <select
+                                    value={viewMode}
+                                    onChange={(e) => setViewMode(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option>By Recruiter</option>
+                                    <option>By Week</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Recruiter</label>
+                                <select
+                                    value={selectedRecruiter}
+                                    onChange={(e) => setSelectedRecruiter(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option>All</option>
+                                    {recruiters.map(r => (
+                                        <option key={r} value={r}>{r}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex gap-3 mb-6">
+                            <button
+                                onClick={fetchData}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                🔄 Refresh
+                            </button>
+                            <button
+                                onClick={exportCSV}
+                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                                📥 Export CSV
+                            </button>
+                        </div>
+                        
+                        {error && (
+                            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-red-800">Error: {error}</p>
+                            </div>
+                        )}
+                        
+                        {loading ? (
+                            <div className="text-center py-12">
+                                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                                <p className="mt-4 text-gray-600">Loading data...</p>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Stat Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
+                                        <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
+                                    </div>
+                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                        <div className="text-sm text-gray-600 mb-1">Total Placements</div>
+                                        <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
+                                    </div>
+                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                        <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
+                                        <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
+                                            {stats.conversionRate}%
+                                        </div>
+                                    </div>
+                                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                                        <div className="text-sm text-gray-600 mb-1">Number of Recruiters</div>
+                                        <div className="text-3xl font-bold text-orange-600">{stats.numRecruiters}</div>
+                                    </div>
+                                </div>
+                                
+                                {/* Charts */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                                    {/* Bar Chart */}
+                                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements</h3>
+                                        <ResponsiveContainer width="100%" height={300}>
+                                            <BarChart data={chartData}>
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                                <YAxis />
+                                                <Tooltip />
+                                                <Legend />
+                                                <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
+                                                <Bar dataKey="placements" fill="#10b981" name="Placements" />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    
+                                    {/* Pie Chart */}
+                                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions by Recruiter</h3>
+                                        <ResponsiveContainer width="100%" height={300}>
+                                            <PieChart>
+                                                <Pie
+                                                    data={pieData}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    labelLine={false}
+                                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                                    outerRadius={100}
+                                                    fill="#8884d8"
+                                                    dataKey="value"
+                                                >
+                                                    {pieData.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                                
+                                {/* Top Performers Table */}
+                                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Top Performers</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="border-b border-gray-200">
+                                                    <th className="text-left py-2 px-4 font-semibold text-gray-700">Recruiter</th>
+                                                    <th className="text-right py-2 px-4 font-semibold text-gray-700">Submissions</th>
+                                                    <th className="text-right py-2 px-4 font-semibold text-gray-700">Placements</th>
+                                                    <th className="text-right py-2 px-4 font-semibold text-gray-700">Conversion %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {topPerformers.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan="4" className="text-center py-8 text-gray-500">No data available</td>
+                                                    </tr>
+                                                ) : (
+                                                    topPerformers.map((perf, idx) => (
+                                                        <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                                                            <td className="py-2 px-4 text-gray-800">{perf.recruiter}</td>
+                                                            <td className="py-2 px-4 text-right text-gray-700">{perf.submissions}</td>
+                                                            <td className="py-2 px-4 text-right text-gray-700">{perf.placements}</td>
+                                                            <td className={`py-2 px-4 text-right ${getConversionColor(parseFloat(perf.conversionRate))}`}>
+                                                                {perf.conversionRate}%
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        
+        // Use createRoot if available (React 18), otherwise fallback to render
+        const rootElement = document.getElementById('root');
+        if (ReactDOM.createRoot) {
+            const root = ReactDOM.createRoot(rootElement);
+            root.render(<AnalyticsDashboard />);
+        } else {
+            ReactDOM.render(<AnalyticsDashboard />, rootElement);
+        }
+    </script>
 </body>
 </html>
 '''
@@ -223,6 +700,11 @@ def home():
         session_status=session_status,
         refresh_interval=REFRESH_INTERVAL_MINUTES
     )
+
+@app.route('/analytics')
+def analytics():
+    """Analytics dashboard page"""
+    return render_template_string(ANALYTICS_TEMPLATE)
 
 @app.route('/login')
 def login():
@@ -506,7 +988,8 @@ def api_submissions():
             'id', 'dateAdded', 'dateLastModified', 'status',
             'candidate(id,firstName,lastName,email,phone)',
             'jobOrder(id,title,clientCorporation(id,name))',
-            'source', 'isDeleted'
+            'source', 'isDeleted',
+            'owner(id,firstName,lastName)'
         ]
         
         params = {
@@ -574,7 +1057,8 @@ def api_placements():
             'id', 'dateAdded', 'dateBegin', 'dateEnd',
             'dateLastModified', 'status', 'payRate', 'billRate',
             'candidate(id,firstName,lastName,email,phone)',
-            'jobOrder(id,title,clientCorporation(id,name))'
+            'jobOrder(id,title,clientCorporation(id,name))',
+            'owner(id,firstName,lastName)'
         ]
         
         params = {
