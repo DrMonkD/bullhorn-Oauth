@@ -166,22 +166,38 @@ ANALYTICS_TEMPLATE = '''
                 setLoading(true);
                 setError(null);
                 try {
+                    console.log(`Fetching data for ${year}-${month}...`);
                     const [subsRes, placeRes] = await Promise.all([
                         fetch(`/api/submissions?year=${year}&month=${month}`),
                         fetch(`/api/placements?year=${year}&month=${month}`)
                     ]);
                     
-                    if (!subsRes.ok || !placeRes.ok) {
-                        throw new Error('Failed to fetch data');
+                    console.log('Submissions response:', subsRes.status, subsRes.ok);
+                    console.log('Placements response:', placeRes.status, placeRes.ok);
+                    
+                    if (!subsRes.ok) {
+                        const errorText = await subsRes.text();
+                        console.error('Submissions error:', errorText);
+                        throw new Error(`Submissions API error: ${subsRes.status} - ${errorText.substring(0, 100)}`);
+                    }
+                    
+                    if (!placeRes.ok) {
+                        const errorText = await placeRes.text();
+                        console.error('Placements error:', errorText);
+                        throw new Error(`Placements API error: ${placeRes.status} - ${errorText.substring(0, 100)}`);
                     }
                     
                     const subsData = await subsRes.json();
                     const placeData = await placeRes.json();
                     
+                    console.log('Submissions data:', subsData.count || 0, 'items');
+                    console.log('Placements data:', placeData.count || 0, 'items');
+                    
                     setSubmissions(subsData.data || []);
                     setPlacements(placeData.data || []);
                 } catch (err) {
-                    setError(err.message);
+                    console.error('Fetch error:', err);
+                    setError(err.message || 'Failed to fetch data');
                 } finally {
                     setLoading(false);
                 }
@@ -189,6 +205,7 @@ ANALYTICS_TEMPLATE = '''
             
             useEffect(() => {
                 fetchData();
+                // eslint-disable-next-line react-hooks/exhaustive-deps
             }, [year, month]);
             
             // Helper function to get recruiter name from jobOrder.owner
@@ -585,13 +602,49 @@ ANALYTICS_TEMPLATE = '''
             );
         }
 
-        const rootEl = document.getElementById('root');
-        if (rootEl && typeof ReactDOM !== 'undefined') {
-            if (ReactDOM.createRoot) {
-                ReactDOM.createRoot(rootEl).render(<AnalyticsDashboard />);
-            } else {
-                ReactDOM.render(<AnalyticsDashboard />, rootEl);
+        // Wait for DOM and libraries to be ready
+        function initApp() {
+            const rootEl = document.getElementById('root');
+            if (!rootEl) {
+                console.error('Root element not found');
+                return;
             }
+            
+            if (typeof React === 'undefined') {
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: React is not loaded</p></div>';
+                return;
+            }
+            
+            if (typeof ReactDOM === 'undefined') {
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: ReactDOM is not loaded</p></div>';
+                return;
+            }
+            
+            if (typeof window.Recharts === 'undefined') {
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: Recharts is not loaded</p></div>';
+                return;
+            }
+            
+            console.log('Rendering AnalyticsDashboard...');
+            try {
+                if (ReactDOM.createRoot) {
+                    ReactDOM.createRoot(rootEl).render(<AnalyticsDashboard />);
+                } else {
+                    ReactDOM.render(<AnalyticsDashboard />, rootEl);
+                }
+                console.log('Component rendered successfully');
+            } catch (err) {
+                console.error('Render error:', err);
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error rendering component</p><p class="text-red-500 text-sm mt-2">' + err.message + '</p></div>';
+            }
+        }
+        
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            // DOM already loaded, wait a bit for scripts
+            setTimeout(initApp, 100);
         }
     </script>
 </body>
