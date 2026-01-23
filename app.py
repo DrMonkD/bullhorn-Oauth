@@ -136,16 +136,6 @@ ANALYTICS_TEMPLATE = '''
     <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/recharts@2.10.0/umd/Recharts.min.js"></script>
-    <script>
-        // Configure Babel to handle JSX
-        if (window.Babel) {
-            window.Babel.registerPreset('react', {
-                presets: [
-                    [window.Babel.availablePresets['react'], {}]
-                ]
-            });
-        }
-    </script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
     <div id="root">
@@ -156,26 +146,6 @@ ANALYTICS_TEMPLATE = '''
     </div>
     
     <script type="text/babel">
-        // Wait for all libraries to be ready
-        (function() {
-            function initApp() {
-                console.log('Initializing Analytics Dashboard...');
-                console.log('React:', typeof React !== 'undefined');
-                console.log('ReactDOM:', typeof ReactDOM !== 'undefined');
-                console.log('Recharts:', typeof window.Recharts !== 'undefined');
-                
-                try {
-                    if (typeof React === 'undefined') {
-                        throw new Error('React is not loaded');
-                    }
-                    if (typeof ReactDOM === 'undefined') {
-                        throw new Error('ReactDOM is not loaded');
-                    }
-                    if (typeof window.Recharts === 'undefined') {
-                        throw new Error('Recharts is not loaded');
-                    }
-                    
-                    console.log('All libraries loaded, rendering component...');
         const { useState, useEffect, useMemo } = React;
         const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } = window.Recharts;
 
@@ -614,33 +584,15 @@ ANALYTICS_TEMPLATE = '''
                 </div>
             );
         }
-        
-                    // Use ReactDOM.render for better compatibility with UMD builds
-                    const rootElement = document.getElementById('root');
-                    if (rootElement) {
-                        console.log('Rendering AnalyticsDashboard to root element...');
-                        ReactDOM.render(<AnalyticsDashboard />, rootElement);
-                        console.log('Component rendered successfully');
-                    } else {
-                        throw new Error('Root element not found');
-                    }
-                } catch (error) {
-                    const rootElement = document.getElementById('root');
-                    if (rootElement) {
-                        rootElement.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error loading dashboard</p><p class="text-red-500 text-sm mt-2">' + error.message + '</p><p class="text-gray-600 text-xs mt-4">Please check the browser console for more details.</p></div>';
-                    }
-                    console.error('Analytics Dashboard Error:', error);
-                }
-            }
-            
-            // Try to initialize immediately, or wait for DOM
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initApp);
+
+        const rootEl = document.getElementById('root');
+        if (rootEl && typeof ReactDOM !== 'undefined') {
+            if (ReactDOM.createRoot) {
+                ReactDOM.createRoot(rootEl).render(<AnalyticsDashboard />);
             } else {
-                // DOM already loaded, but wait a bit for scripts
-                setTimeout(initApp, 100);
+                ReactDOM.render(<AnalyticsDashboard />, rootEl);
             }
-        })();
+        }
     </script>
 </body>
 </html>
