@@ -186,14 +186,20 @@ ANALYTICS_TEMPLATE = '''
                 fetchData();
             }, [year, month]);
             
+            // Helper function to get recruiter name from jobOrder.owner
+            const getRecruiterName = (item) => {
+                if (item.jobOrder && item.jobOrder.owner && item.jobOrder.owner.firstName && item.jobOrder.owner.lastName) {
+                    return `${item.jobOrder.owner.firstName} ${item.jobOrder.owner.lastName}`;
+                }
+                return null;
+            };
+            
             // Get unique recruiters
             const recruiters = useMemo(() => {
                 const recruiterSet = new Set();
                 [...submissions, ...placements].forEach(item => {
-                    if (item.addedBy && item.addedBy.firstName && item.addedBy.lastName) {
-                        const name = `${item.addedBy.firstName} ${item.addedBy.lastName}`;
-                        recruiterSet.add(name);
-                    }
+                    const name = getRecruiterName(item);
+                    if (name) recruiterSet.add(name);
                 });
                 return Array.from(recruiterSet).sort();
             }, [submissions, placements]);
@@ -202,8 +208,7 @@ ANALYTICS_TEMPLATE = '''
             const filteredSubmissions = useMemo(() => {
                 if (selectedRecruiter === 'All') return submissions;
                 return submissions.filter(sub => {
-                    if (!sub.addedBy) return false;
-                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim();
+                    const name = getRecruiterName(sub);
                     return name === selectedRecruiter;
                 });
             }, [submissions, selectedRecruiter]);
@@ -211,8 +216,7 @@ ANALYTICS_TEMPLATE = '''
             const filteredPlacements = useMemo(() => {
                 if (selectedRecruiter === 'All') return placements;
                 return placements.filter(place => {
-                    if (!place.addedBy) return false;
-                    const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim();
+                    const name = getRecruiterName(place);
                     return name === selectedRecruiter;
                 });
             }, [placements, selectedRecruiter]);
@@ -224,10 +228,8 @@ ANALYTICS_TEMPLATE = '''
                 const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
                 const uniqueRecruiters = new Set();
                 [...filteredSubmissions, ...filteredPlacements].forEach(item => {
-                    if (item.addedBy && item.addedBy.firstName && item.addedBy.lastName) {
-                        const name = `${item.addedBy.firstName} ${item.addedBy.lastName}`;
-                        uniqueRecruiters.add(name);
-                    }
+                    const name = getRecruiterName(item);
+                    if (name) uniqueRecruiters.add(name);
                 });
                 
                 return {
@@ -244,8 +246,7 @@ ANALYTICS_TEMPLATE = '''
                     const recruiterMap = new Map();
                     
                     filteredSubmissions.forEach(sub => {
-                        if (!sub.addedBy) return;
-                        const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
+                        const name = getRecruiterName(sub) || 'Unknown';
                         if (!recruiterMap.has(name)) {
                             recruiterMap.set(name, { name, submissions: 0, placements: 0 });
                         }
@@ -253,8 +254,7 @@ ANALYTICS_TEMPLATE = '''
                     });
                     
                     filteredPlacements.forEach(place => {
-                        if (!place.addedBy) return;
-                        const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim() || 'Unknown';
+                        const name = getRecruiterName(place) || 'Unknown';
                         if (!recruiterMap.has(name)) {
                             recruiterMap.set(name, { name, submissions: 0, placements: 0 });
                         }
@@ -307,8 +307,7 @@ ANALYTICS_TEMPLATE = '''
             const pieData = useMemo(() => {
                 const recruiterMap = new Map();
                 filteredSubmissions.forEach(sub => {
-                    if (!sub.addedBy) return;
-                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
+                    const name = getRecruiterName(sub) || 'Unknown';
                     recruiterMap.set(name, (recruiterMap.get(name) || 0) + 1);
                 });
                 
@@ -322,8 +321,7 @@ ANALYTICS_TEMPLATE = '''
                 const recruiterMap = new Map();
                 
                 filteredSubmissions.forEach(sub => {
-                    if (!sub.addedBy) return;
-                    const name = `${sub.addedBy.firstName || ''} ${sub.addedBy.lastName || ''}`.trim() || 'Unknown';
+                    const name = getRecruiterName(sub) || 'Unknown';
                     if (!recruiterMap.has(name)) {
                         recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
                     }
@@ -331,8 +329,7 @@ ANALYTICS_TEMPLATE = '''
                 });
                 
                 filteredPlacements.forEach(place => {
-                    if (!place.addedBy) return;
-                    const name = `${place.addedBy.firstName || ''} ${place.addedBy.lastName || ''}`.trim() || 'Unknown';
+                    const name = getRecruiterName(place) || 'Unknown';
                     if (!recruiterMap.has(name)) {
                         recruiterMap.set(name, { recruiter: name, submissions: 0, placements: 0 });
                     }
@@ -987,9 +984,8 @@ def api_submissions():
         fields = [
             'id', 'dateAdded', 'dateLastModified', 'status',
             'candidate(id,firstName,lastName,email,phone)',
-            'jobOrder(id,title,clientCorporation(id,name))',
-            'source', 'isDeleted',
-            'addedBy(id,firstName,lastName)'
+            'jobOrder(id,title,clientCorporation(id,name),owner(id,firstName,lastName))',
+            'source', 'isDeleted'
         ]
         
         params = {
@@ -1057,8 +1053,7 @@ def api_placements():
             'id', 'dateAdded', 'dateBegin', 'dateEnd',
             'dateLastModified', 'status', 'payRate', 'billRate',
             'candidate(id,firstName,lastName,email,phone)',
-            'jobOrder(id,title,clientCorporation(id,name))',
-            'addedBy(id,firstName,lastName)'
+            'jobOrder(id,title,clientCorporation(id,name),owner(id,firstName,lastName))'
         ]
         
         params = {
