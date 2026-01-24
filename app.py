@@ -142,6 +142,13 @@ ANALYTICS_TEMPLATE = '''
     <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.0/dist/Recharts.js"></script>
+    <script>
+        // #region agent log - CDN load check
+        window.addEventListener('DOMContentLoaded', function() {
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:DOMContentLoaded',message:'DOM ready - checking libs',data:{React:typeof React,ReactDOM:typeof ReactDOM,Recharts:typeof Recharts,windowRecharts:typeof window.Recharts,ReactIs:typeof ReactIs},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G-dom-ready'})}).catch(function(){});
+        });
+        // #endregion
+    </script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
     <div id="root">
@@ -164,6 +171,10 @@ ANALYTICS_TEMPLATE = '''
         
         const hasRecharts = RechartsComponents !== null;
         const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = RechartsComponents || {};
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:top-level',message:'Recharts components check',data:{hasRecharts:hasRecharts,BarChartType:typeof BarChart,ResponsiveContainerType:typeof ResponsiveContainer,windowRechartsType:typeof window.Recharts},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F-components-destructure'})}).catch(()=>{});
+        // #endregion
 
         function AnalyticsDashboard() {
             const [submissions, setSubmissions] = useState([]);
@@ -824,6 +835,9 @@ ANALYTICS_TEMPLATE = '''
         // Wait for DOM and libraries to be ready
         function initApp() {
             const rootEl = document.getElementById('root');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp',message:'initApp called',data:{rootElExists:!!rootEl,windowRecharts:typeof window.Recharts,globalRecharts:typeof Recharts,windowReact:typeof window.React,windowReactDOM:typeof window.ReactDOM},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-global-vars'})}).catch(()=>{});
+            // #endregion
             if (!rootEl) {
                 console.error('Root element not found');
                 return;
@@ -839,9 +853,17 @@ ANALYTICS_TEMPLATE = '''
                 return;
             }
             
+            // #region agent log
+            const rechartsKeys = typeof window.Recharts === 'object' ? Object.keys(window.Recharts || {}).slice(0,10) : [];
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:recharts-check',message:'Recharts detail check',data:{windowRechartsType:typeof window.Recharts,rechartsKeys:rechartsKeys,hasBarChart:!!(window.Recharts && window.Recharts.BarChart),hasResponsiveContainer:!!(window.Recharts && window.Recharts.ResponsiveContainer)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-recharts-components'})}).catch(()=>{});
+            // #endregion
+            
             // Recharts is optional - warn but don't block
             if (typeof window.Recharts === 'undefined' && typeof Recharts === 'undefined') {
                 console.warn('Recharts library not loaded - charts will be disabled');
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:recharts-missing',message:'Recharts NOT available',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C-recharts-missing'})}).catch(()=>{});
+                // #endregion
             }
             
             console.log('Rendering AnalyticsDashboard...');
@@ -852,8 +874,14 @@ ANALYTICS_TEMPLATE = '''
                     ReactDOM.render(<AnalyticsDashboard />, rootEl);
                 }
                 console.log('Component rendered successfully');
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:rendered',message:'Component rendered',data:{hasRecharts:typeof window.Recharts !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D-render-success'})}).catch(()=>{});
+                // #endregion
             } catch (err) {
                 console.error('Render error:', err);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:error',message:'Render error',data:{error:err.message,stack:err.stack},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E-render-error'})}).catch(()=>{});
+                // #endregion
                 rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error rendering component</p><p class="text-red-500 text-sm mt-2">' + err.message + '</p></div>';
             }
         }
