@@ -348,17 +348,21 @@ ANALYTICS_TEMPLATE = '''
                 else fetchAnalyticsData();
             }, [dateRange.start, dateRange.end, viewMode]);
             
-            // Stats (id, dateAdded; placements also have status for Requested Credentialing)
-            const isRequestedCredentialing = (p) => String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim() === 'requested credentialing';
+            // Stats (id, dateAdded; placements have status). Booked = Requested Credentialing, Credentialed, On assignment, Assignment completed.
+            const BOOKED_STATUSES = ['requested credentialing', 'credentialed', 'on assignment', 'assignment completed'];
+            const isBooked = (p) => {
+                const s = String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+                return BOOKED_STATUSES.indexOf(s) >= 0;
+            };
             const stats = useMemo(() => {
                 const totalSubmissions = submissions.length;
                 const totalPlacements = placements.length;
-                const totalRequestedCredentialing = placements.filter(isRequestedCredentialing).length;
-                const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
+                const totalBooked = placements.filter(isBooked).length;
+                const conversionRate = totalSubmissions > 0 ? (totalBooked / totalSubmissions * 100).toFixed(1) : 0;
                 return {
                     totalSubmissions,
                     totalPlacements,
-                    totalRequestedCredentialing,
+                    totalBooked,
                     conversionRate: parseFloat(conversionRate)
                 };
             }, [submissions, placements]);
@@ -379,16 +383,16 @@ ANALYTICS_TEMPLATE = '''
                     if (!sub.dateAdded) return;
                     const week = getWeekNumber(sub.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, requestedCredentialing: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0 });
                     weekMap.get(key).submissions++;
                 });
                 placements.forEach(place => {
                     if (!place.dateAdded) return;
                     const week = getWeekNumber(place.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, requestedCredentialing: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0 });
                     weekMap.get(key).placements++;
-                    if (isRequestedCredentialing(place)) weekMap.get(key).requestedCredentialing++;
+                    if (isBooked(place)) weekMap.get(key).booked++;
                 });
                 return Array.from(weekMap.values()).sort((a, b) => {
                     const weekA = parseInt(a.name.replace('Week ', ''), 10);
@@ -399,8 +403,8 @@ ANALYTICS_TEMPLATE = '''
             
             // Export CSV (by-week data)
             const exportCSV = () => {
-                const rows = [['Week', 'Submissions', 'Placements', 'Requested Credentialing']];
-                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.requestedCredentialing || 0)]));
+                const rows = [['Week', 'Submissions', 'Placements', 'Booked']];
+                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0)]));
                 const csv = rows.map(row => row.join(',')).join('\\n');
                 const blob = new Blob([csv], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
@@ -600,8 +604,8 @@ ANALYTICS_TEMPLATE = '''
                             {viewMode === 'basic' && (
                                 <button
                                     onClick={() => {
-                                        const rows = [['Week', 'Submissions', 'Placements', 'Requested Credentialing']];
-                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.requestedCredentialing || 0)]));
+                                        const rows = [['Week', 'Submissions', 'Placements', 'Booked']];
+                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0)]));
                                         const csv = rows.map(row => row.join(',')).join('\\n');
                                         const blob = new Blob([csv], { type: 'text/csv' });
                                         const url = window.URL.createObjectURL(blob);
@@ -644,11 +648,11 @@ ANALYTICS_TEMPLATE = '''
                                                 <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
                                             </div>
                                             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Requested Credentialing</div>
-                                                <div className="text-3xl font-bold text-amber-600">{stats.totalRequestedCredentialing}</div>
+                                                <div className="text-sm text-gray-600 mb-1">Booked</div>
+                                                <div className="text-3xl font-bold text-amber-600">{stats.totalBooked}</div>
                                             </div>
                                             <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
+                                                <div className="text-sm text-gray-600 mb-1">Booked / Submitted</div>
                                                 <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
                                                     {stats.conversionRate}%
                                                 </div>
@@ -662,9 +666,9 @@ ANALYTICS_TEMPLATE = '''
                                                 datasets={[
                                                     { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
                                                     { dataKey: 'placements', label: 'Placements', color: 'rgba(16,185,129,0.8)' },
-                                                    { dataKey: 'requestedCredentialing', label: 'Requested Credentialing', color: 'rgba(245,158,11,0.8)' }
+                                                    { dataKey: 'booked', label: 'Booked', color: 'rgba(245,158,11,0.8)' }
                                                 ]}
-                                                title="Submissions, Placements & Requested Credentialing by Week"
+                                                title="Submissions, Placements & Booked by Week"
                                                 height={300}
                                             />
                                         </div>
@@ -1673,7 +1677,7 @@ def api_placements():
         
         url = f"{rest_url}query/Placement"
         
-        # id, dateAdded, status (status needed for Requested Credentialing in Basic chart)
+        # id, dateAdded, status (status needed for Booked: Requested Credentialing, Credentialed, On assignment, Assignment completed)
         fields = 'id,dateAdded,status'
         
         params = {
