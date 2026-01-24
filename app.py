@@ -1433,7 +1433,7 @@ def fetch_placements(start_ms, end_ms, include_recruiter=True):
     Args:
         start_ms: Start timestamp in milliseconds
         end_ms: End timestamp in milliseconds
-        include_recruiter: If True, include sendingUser field
+        include_recruiter: If True, include owner (CorporateUser) field. Placement uses owner, not sendingUser.
     
     Returns:
         List of placement records or None on error
@@ -1450,7 +1450,7 @@ def fetch_placements(start_ms, end_ms, include_recruiter=True):
         url = f"{rest_url}query/Placement"
         
         if include_recruiter:
-            fields = 'id,dateAdded,sendingUser(id,firstName,lastName)'
+            fields = 'id,dateAdded,owner(id,firstName,lastName)'
         else:
             fields = 'id,dateAdded'
         
@@ -1471,16 +1471,16 @@ def fetch_placements(start_ms, end_ms, include_recruiter=True):
         return None
 
 def get_recruiter_name(item):
-    """Extract recruiter name from sendingUser field"""
-    if item.get('sendingUser') and item['sendingUser'].get('firstName') and item['sendingUser'].get('lastName'):
-        return f"{item['sendingUser']['firstName']} {item['sendingUser']['lastName']}"
+    """Extract recruiter name from sendingUser (JobSubmission) or owner (Placement) field."""
+    u = item.get('sendingUser') or item.get('owner')
+    if u and (u.get('firstName') or u.get('lastName')):
+        return f"{u.get('firstName', '')} {u.get('lastName', '')}".strip() or "Unknown"
     return "Unknown"
 
 def get_recruiter_id(item):
-    """Extract recruiter ID from sendingUser field"""
-    if item.get('sendingUser') and item['sendingUser'].get('id'):
-        return item['sendingUser']['id']
-    return None
+    """Extract recruiter ID from sendingUser (JobSubmission) or owner (Placement) field."""
+    u = item.get('sendingUser') or item.get('owner')
+    return u.get('id') if u else None
 
 def get_week_range(date_ms):
     """Get week start and end dates for a given timestamp"""
@@ -1710,8 +1710,8 @@ def api_placements_detailed():
         
         url = f"{rest_url}query/Placement"
         
-        # Full fields: candidate, job, client, owner (same shape as submissions/detailed)
-        fields = 'id,dateAdded,status,candidate(id,firstName,lastName,email),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
+        # Full fields: candidate, job, client, owner. Placement uses owner (CorporateUser), not sendingUser.
+        fields = 'id,dateAdded,status,candidate(id,firstName,lastName,email),jobOrder(id,title,clientCorporation(id,name)),owner(id,firstName,lastName)'
         
         params = {
             'BhRestToken': tokens['bh_rest_token'],
@@ -1731,7 +1731,7 @@ def api_placements_detailed():
         for plc in placements:
             candidate = plc.get('candidate', {}) or {}
             job = plc.get('jobOrder', {}) or {}
-            owner = plc.get('sendingUser', {}) or {}
+            owner = plc.get('owner', {}) or {}
             client = job.get('clientCorporation', {}) or {}
             
             formatted.append({
