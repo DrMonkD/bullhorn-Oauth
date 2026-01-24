@@ -366,6 +366,11 @@ ANALYTICS_TEMPLATE = '''
                 const s = String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim();
                 return BOOKED_STATUSES.indexOf(s) >= 0;
             };
+            const CANCELLED_STATUSES = ['provider cancelled', 'concord cancelled', 'client cancelled', 'credentialing cancelled'];
+            const isCancelled = (p) => {
+                const s = String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+                return CANCELLED_STATUSES.indexOf(s) >= 0;
+            };
             // Submissions whose dateAdded falls in the user-selected range (needed when submissions response is extended for owner linkage).
             const submissionsInRange = useMemo(() => {
                 var startMs = new Date(dateRange.start + 'T00:00:00').getTime();
@@ -414,12 +419,16 @@ ANALYTICS_TEMPLATE = '''
                 const totalSubmissions = filteredSubmissions.length;
                 const totalPlacements = filteredPlacements.length;
                 const totalBooked = filteredPlacements.filter(isBooked).length;
+                const totalCancelled = filteredPlacements.filter(isCancelled).length;
                 const conversionRate = totalSubmissions > 0 ? (totalBooked / totalSubmissions * 100).toFixed(1) : 0;
+                const bookedToCancellationRatio = totalCancelled > 0 ? totalBooked / totalCancelled : null;
                 return {
                     totalSubmissions,
                     totalPlacements,
                     totalBooked,
-                    conversionRate: parseFloat(conversionRate)
+                    totalCancelled,
+                    conversionRate: parseFloat(conversionRate),
+                    bookedToCancellationRatio
                 };
             }, [filteredSubmissions, filteredPlacements]);
             
@@ -439,16 +448,17 @@ ANALYTICS_TEMPLATE = '''
                     if (!sub.dateAdded) return;
                     const week = getWeekNumber(sub.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0, cancelled: 0 });
                     weekMap.get(key).submissions++;
                 });
                 filteredPlacements.forEach(place => {
                     if (!place.dateAdded) return;
                     const week = getWeekNumber(place.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0, cancelled: 0 });
                     weekMap.get(key).placements++;
                     if (isBooked(place)) weekMap.get(key).booked++;
+                    if (isCancelled(place)) weekMap.get(key).cancelled++;
                 });
                 return Array.from(weekMap.values()).sort((a, b) => {
                     const weekA = parseInt(a.name.replace('Week ', ''), 10);
@@ -459,8 +469,8 @@ ANALYTICS_TEMPLATE = '''
             
             // Export CSV (by-week data)
             const exportCSV = () => {
-                const rows = [['Week', 'Submissions', 'Placements', 'Booked']];
-                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0)]));
+                const rows = [['Week', 'Submissions', 'Placements', 'Booked', 'Cancelled']];
+                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0), String(d.cancelled || 0)]));
                 const csv = rows.map(row => row.join(',')).join('\\n');
                 const blob = new Blob([csv], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
@@ -474,6 +484,12 @@ ANALYTICS_TEMPLATE = '''
             const getConversionColor = (rate) => {
                 if (rate >= 20) return 'text-green-600 font-semibold';
                 if (rate >= 10) return 'text-yellow-600 font-semibold';
+                return 'text-red-600 font-semibold';
+            };
+            const getBookedToCancellationColor = (ratio) => {
+                if (ratio == null) return 'text-gray-600';
+                if (ratio >= 2) return 'text-green-600 font-semibold';
+                if (ratio >= 1) return 'text-yellow-600 font-semibold';
                 return 'text-red-600 font-semibold';
             };
             
@@ -660,8 +676,8 @@ ANALYTICS_TEMPLATE = '''
                             {viewMode === 'basic' && (
                                 <button
                                     onClick={() => {
-                                        const rows = [['Week', 'Submissions', 'Placements', 'Booked']];
-                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0)]));
+                                        const rows = [['Week', 'Submissions', 'Placements', 'Booked', 'Cancelled']];
+                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0), String(d.cancelled || 0)]));
                                         const csv = rows.map(row => row.join(',')).join('\\n');
                                         const blob = new Blob([csv], { type: 'text/csv' });
                                         const url = window.URL.createObjectURL(blob);
@@ -712,7 +728,7 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         {/* Basic View - Stats & Chart */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                                 <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
                                                 <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
@@ -731,6 +747,16 @@ ANALYTICS_TEMPLATE = '''
                                                     {stats.conversionRate}%
                                                 </div>
                                             </div>
+                                            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Cancelled</div>
+                                                <div className="text-3xl font-bold text-red-600">{stats.totalCancelled}</div>
+                                            </div>
+                                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Booked / Cancelled</div>
+                                                <div className={`text-3xl font-bold ${getBookedToCancellationColor(stats.bookedToCancellationRatio)}`}>
+                                                    {stats.bookedToCancellationRatio != null ? stats.bookedToCancellationRatio.toFixed(1) : '—'}
+                                                </div>
+                                            </div>
                                         </div>
                                         
                                         <div className="mb-6">
@@ -740,9 +766,10 @@ ANALYTICS_TEMPLATE = '''
                                                 datasets={[
                                                     { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
                                                     { dataKey: 'placements', label: 'Placements', color: 'rgba(16,185,129,0.8)' },
-                                                    { dataKey: 'booked', label: 'Booked', color: 'rgba(245,158,11,0.8)' }
+                                                    { dataKey: 'booked', label: 'Booked', color: 'rgba(245,158,11,0.8)' },
+                                                    { dataKey: 'cancelled', label: 'Cancelled', color: 'rgba(239,68,68,0.8)' }
                                                 ]}
-                                                title="Submissions, Placements & Booked by Week"
+                                                title="Submissions, Placements, Booked & Cancelled by Week"
                                                 height={300}
                                             />
                                         </div>
