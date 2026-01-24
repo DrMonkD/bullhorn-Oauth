@@ -402,16 +402,24 @@ ANALYTICS_TEMPLATE = '''
             const detailedMeta = useMemo(function(){
                 var owners = [], statuses = [];
                 detailedSubmissions.forEach(function(s){
-                    var o = (s.ownerName || '').trim(); if (o && owners.indexOf(o) < 0) owners.push(o);
-                    var t = (s.status || '').trim(); if (t && statuses.indexOf(t) < 0) statuses.push(t);
+                    // #region agent log
+                    var oRaw = s.ownerName, tRaw = s.status;
+                    if (typeof oRaw !== 'string' || typeof tRaw !== 'string') {
+                        fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'detailedMeta:nonString',message:'owner or status not string',data:{ownerType:typeof oRaw,ownerVal:oRaw,statusType:typeof tRaw,statusVal:tRaw},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(function(){});
+                    }
+                    // #endregion
+                    var o = String(oRaw != null ? oRaw : '').trim();
+                    var t = String(tRaw != null ? tRaw : '').trim();
+                    if (o && owners.indexOf(o) < 0) owners.push(o);
+                    if (t && statuses.indexOf(t) < 0) statuses.push(t);
                 });
                 owners.sort(); statuses.sort();
                 return { owners: owners, statuses: statuses };
             }, [detailedSubmissions]);
             const filteredDetailed = useMemo(function(){
                 var l = detailedSubmissions;
-                if (filterOwner) l = l.filter(function(s){ return (s.ownerName || '').toLowerCase().indexOf(filterOwner.toLowerCase()) >= 0; });
-                if (filterStatus) l = l.filter(function(s){ return (s.status || '') === filterStatus; });
+                if (filterOwner) l = l.filter(function(s){ return String(s.ownerName != null ? s.ownerName : '').toLowerCase().indexOf(filterOwner.toLowerCase()) >= 0; });
+                if (filterStatus) l = l.filter(function(s){ return String(s.status != null ? s.status : '') === filterStatus; });
                 return l;
             }, [detailedSubmissions, filterOwner, filterStatus]);
             
