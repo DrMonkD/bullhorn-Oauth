@@ -14,6 +14,9 @@ CLIENT_SECRET = os.environ.get('BULLHORN_CLIENT_SECRET', '')
 REDIRECT_URI = 'https://bullhorn-oauth.onrender.com/oauth/callback'
 TOKEN_FILE = 'token_store.json'
 
+# Logo: set LOGO_URL to override; default uses Concord Icon from bullhorn-Oauth repo
+LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD/bullhorn-Oauth/main/Concord%20Icon.png')
+
 # Auto-refresh configuration
 REFRESH_INTERVAL_MINUTES = 5  # Refresh every 5 minutes
 scheduler = BackgroundScheduler()
@@ -136,7 +139,9 @@ ANALYTICS_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analytics Dashboard - Bullhorn OAuth</title>
+    <title>Bullhorn Analytics Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body{font-family:'Inter',system-ui,-apple-system,sans-serif}</style>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -144,11 +149,11 @@ ANALYTICS_TEMPLATE = '''
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
+<body class="bg-slate-100 min-h-screen p-6 font-sans antialiased">
     <div id="root">
         <div class="p-6 text-center">
-            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-            <p class="mt-4 text-gray-600">Loading dashboard...</p>
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-2 border-slate-300 border-t-slate-600"></div>
+            <p class="mt-4 text-slate-600">Loading dashboard...</p>
         </div>
     </div>
     
@@ -184,11 +189,11 @@ ANALYTICS_TEMPLATE = '''
                 return function() { if (chartRef.current) chartRef.current.destroy(); };
             }, [data, labelsKey]);
             
-            if (!ChartLib) return <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg"><p className="text-yellow-800">Charts unavailable (Chart.js failed to load).</p></div>;
+            if (!ChartLib) return <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
             if (!data || data.length === 0) return null;
             return (
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    {title && <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>}
+                <div className="bg-white border border-slate-200 rounded-lg p-4">
+                    {title && <h3 className="text-base font-medium text-slate-800 mb-4">{title}</h3>}
                     <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
                     </div>
@@ -541,62 +546,62 @@ ANALYTICS_TEMPLATE = '''
             
             return (
                 <div className="max-w-7xl mx-auto">
-                    <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <img src="/static/logo.png" alt="" className="h-10 w-auto" />
-                                <h1 className="text-3xl font-bold text-gray-800">Bullhorn Analytics Dashboard</h1>
+                                <img src="{{ logo_url }}" alt="Concord" className="h-10 w-auto" />
+                                <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Bullhorn Analytics Dashboard</h1>
                             </div>
-                            <a href="/" className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                                ← Back to OAuth
+                            <a href="/" className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium">
+                                Back to OAuth
                             </a>
                         </div>
                         
                         {/* View Mode Toggle */}
-                        <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">View Mode</label>
+                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">View</label>
                             <div className="flex gap-2 flex-wrap">
                                 <button
                                     onClick={() => setViewMode('basic')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'basic' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                            ? 'bg-slate-800 text-white' 
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
                                     At a glance
                                 </button>
                                 <button
                                     onClick={() => setViewMode('detailed')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'detailed' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                            ? 'bg-slate-800 text-white' 
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
-                                    📋 Detailed Submissions
+                                    Detailed Submissions
                                 </button>
                                 <button
                                     onClick={() => setViewMode('detailed_placements')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'detailed_placements' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                            ? 'bg-slate-800 text-white' 
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
-                                    📋 Detailed Placements
+                                    Detailed Placements
                                 </button>
                             </div>
                         </div>
                         
                         {/* Date / Period */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-white border border-slate-200 rounded-lg">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Period</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Period</label>
                                 <select
                                     value={periodType}
                                     onChange={(e) => setPeriodType(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
                                 >
                                     <option value="week">Week</option>
                                     <option value="month">Month</option>
@@ -606,24 +611,24 @@ ANALYTICS_TEMPLATE = '''
                             </div>
                             {periodType === 'week' && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Date in week</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Date in week</label>
                                     <input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" />
                                 </div>
                             )}
                             {periodType === 'month' && (
                                 <>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Year</label>
                                         <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                             {[2024, 2025, 2026, 2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Month</label>
                                         <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                             {Array.from({ length: 12 }, function(_, i){ var m = i + 1; return <option key={m} value={m}>{new Date(2024, m - 1).toLocaleString('default', { month: 'long' })}</option>; })}
                                         </select>
                                     </div>
@@ -631,9 +636,9 @@ ANALYTICS_TEMPLATE = '''
                             )}
                             {periodType === 'year' && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Year</label>
                                     <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                         {[2024, 2025, 2026, 2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}
                                     </select>
                                 </div>
@@ -641,14 +646,14 @@ ANALYTICS_TEMPLATE = '''
                             {periodType === 'custom' && (
                                 <>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">From</label>
                                         <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">To</label>
                                         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" />
                                     </div>
                                 </>
                             )}
@@ -661,9 +666,9 @@ ANALYTICS_TEMPLATE = '''
                                     if (viewMode === 'basic') fetchBasicData();
                                     else fetchAnalyticsData();
                                 }}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                className="px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
                             >
-                                🔄 Refresh
+                                Refresh
                             </button>
                             {viewMode === 'basic' && (
                                 <button
@@ -679,74 +684,74 @@ ANALYTICS_TEMPLATE = '''
                                         a.click();
                                         window.URL.revokeObjectURL(url);
                                     }}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
                                 >
-                                    📥 Export CSV
+                                    Export CSV
                                 </button>
                             )}
                         </div>
                         
                         {error && (
                             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                                <p className="text-red-800">Error: {error}</p>
+                                <p className="text-red-800 text-sm">Error: {error}</p>
                             </div>
                         )}
                         
                         {loading ? (
                             <div className="text-center py-12">
-                                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                                <p className="mt-4 text-gray-600">Loading data...</p>
+                                <div className="inline-block animate-spin rounded-full h-12 w-12 border-2 border-slate-200 border-t-slate-600"></div>
+                                <p className="mt-4 text-slate-600">Loading data...</p>
                             </div>
                         ) : (
                             <>
                                 {viewMode === 'basic' && (
                                     <>
                                         {/* Basic View - Owner filter (submitter). Booked/placements use (candidate, job): one candidate to multiple jobs = separate books. */}
-                                        <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                        <div className="mb-4 p-4 bg-white border border-slate-200 rounded-lg">
                                             <div className="flex flex-wrap items-center gap-3">
-                                                <span className="text-sm font-medium text-gray-700">Filter by owner (submitter):</span>
+                                                <span className="text-sm font-medium text-slate-700">Filter by owner (submitter)</span>
                                                 <select
                                                     value={filterBasicOwner}
                                                     onChange={(e) => setFilterBasicOwner(e.target.value)}
-                                                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+                                                    className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400 min-w-[180px]"
                                                 >
                                                     <option value="">All</option>
                                                     {basicOwnerList.map(function(o){ return <option key={o.id} value={o.id}>{o.name}</option>; })}
                                                 </select>
                                                 {filterBasicOwner && (
                                                     <button type="button" onClick={() => setFilterBasicOwner('')}
-                                                        className="text-sm text-indigo-600 hover:underline">Clear</button>
+                                                        className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
                                                 )}
                                             </div>
                                         </div>
                                         {/* Basic View - Stats & Chart */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Total Submissions</div>
+                                                <div className="text-2xl font-semibold text-slate-900">{stats.totalSubmissions}</div>
                                             </div>
-                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Placements</div>
-                                                <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Total Placements</div>
+                                                <div className="text-2xl font-semibold text-slate-900">{stats.totalPlacements}</div>
                                             </div>
-                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Booked</div>
-                                                <div className="text-3xl font-bold text-amber-600">{stats.totalBooked}</div>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Booked</div>
+                                                <div className="text-2xl font-semibold text-slate-900">{stats.totalBooked}</div>
                                             </div>
-                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Booked / Submitted</div>
-                                                <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Booked / Submitted</div>
+                                                <div className={`text-2xl font-semibold ${getConversionColor(stats.conversionRate)}`}>
                                                     {stats.conversionRate}%
                                                 </div>
                                             </div>
-                                            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Cancelled</div>
-                                                <div className="text-3xl font-bold text-red-600">{stats.totalCancelled}</div>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Cancelled</div>
+                                                <div className="text-2xl font-semibold text-slate-900">{stats.totalCancelled}</div>
                                             </div>
-                                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Cancelled / (Booked+Cancelled)</div>
-                                                <div className="text-3xl font-bold flex justify-between items-baseline gap-2">
-                                                    <span>{stats.totalCancelled}/{stats.totalEverBooked}</span>
+                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                                <div className="text-sm text-slate-500 mb-1">Cancelled / (Booked+Cancelled)</div>
+                                                <div className="text-2xl font-semibold flex justify-between items-baseline gap-2">
+                                                    <span className="text-slate-900">{stats.totalCancelled}/{stats.totalEverBooked}</span>
                                                     <span className={getCancelledShareColor(stats.cancelledShare)}>
                                                         {stats.cancelledShare != null ? '(' + stats.cancelledShare.toFixed(1) + '%)' : '(—)'}
                                                     </span>
@@ -772,8 +777,8 @@ ANALYTICS_TEMPLATE = '''
                                         </div>
                                             </div>
                                             <aside className="lg:w-80 flex-shrink-0">
-                                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-gray-700">
-                                                    <h4 className="font-semibold text-gray-800 mb-3">How we calculate</h4>
+                                                <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-lg text-sm text-slate-600">
+                                                    <h4 className="font-medium text-slate-800 mb-3">How we calculate</h4>
                                                     <ul className="space-y-2 list-none">
                                                         <li><strong>Submissions:</strong> In selected date range. With owner: only that owner (submitter).</li>
                                                         <li><strong>Placements:</strong> In range. With owner: only (candidate, job) submitted by that owner; submissions 12 months back when owner set for linkage.</li>
@@ -791,23 +796,23 @@ ANALYTICS_TEMPLATE = '''
                                 {viewMode === 'recruiter' && (
                                     <>
                                         {/* Recruiter Leaderboard */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Recruiter Leaderboard</h3>
-                                            <div className="overflow-x-auto">
+                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                            <h3 className="text-base font-semibold text-slate-800 mb-4">Recruiter Leaderboard</h3>
+                                            <div className="overflow-x-auto bg-white border border-slate-200 rounded-lg">
                                                 <table className="w-full">
                                                     <thead>
-                                                        <tr className="border-b border-gray-200">
-                                                            <th className="text-left py-2 px-4 font-semibold text-gray-700">Recruiter</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Submissions</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Presented</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Placed</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Conversion %</th>
+                                                        <tr className="border-b border-slate-200 bg-slate-50">
+                                                            <th className="text-left py-2 px-4 font-medium text-slate-600 text-sm">Recruiter</th>
+                                                            <th className="text-right py-2 px-4 font-medium text-slate-600 text-sm">Submissions</th>
+                                                            <th className="text-right py-2 px-4 font-medium text-slate-600 text-sm">Presented</th>
+                                                            <th className="text-right py-2 px-4 font-medium text-slate-600 text-sm">Placed</th>
+                                                            <th className="text-right py-2 px-4 font-medium text-slate-600 text-sm">Conversion %</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {recruitersData.length === 0 ? (
                                                             <tr>
-                                                                <td colSpan="5" className="text-center py-8 text-gray-500">No recruiter data available</td>
+                                                                <td colSpan="5" className="text-center py-8 text-slate-500 text-sm">No recruiter data available</td>
                                                             </tr>
                                                         ) : (
                                                             recruitersData.map((rec, idx) => {
@@ -815,16 +820,12 @@ ANALYTICS_TEMPLATE = '''
                                                                     ? (rec.totalPlacements / rec.totalSubmissions * 100).toFixed(1) 
                                                                     : 0;
                                                                 return (
-                                                                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                                                                        <td className="py-2 px-4 text-gray-800">{rec.name}</td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalSubmissions}</td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">
-                                                            {(rec.statusBreakdown || {})['Presented'] || 0}
-                                                        </td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalPlacements}</td>
-                                                                        <td className={`py-2 px-4 text-right ${getConversionColor(parseFloat(conversion))}`}>
-                                                                            {conversion}%
-                                                                        </td>
+                                                                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 last:border-b-0">
+                                                                        <td className="py-2 px-4 text-slate-800 text-sm">{rec.name}</td>
+                                                                        <td className="py-2 px-4 text-right text-slate-600 text-sm">{rec.totalSubmissions}</td>
+                                                                        <td className="py-2 px-4 text-right text-slate-600 text-sm">{(rec.statusBreakdown || {})['Presented'] || 0}</td>
+                                                                        <td className="py-2 px-4 text-right text-slate-600 text-sm">{rec.totalPlacements}</td>
+                                                                        <td className={`py-2 px-4 text-right text-sm ${getConversionColor(parseFloat(conversion))}`}>{conversion}%</td>
                                                                     </tr>
                                                                 );
                                                             })
@@ -839,82 +840,80 @@ ANALYTICS_TEMPLATE = '''
                                 {viewMode === 'detailed' && (
                                     <>
                                         {/* Detailed Submissions Table */}
-                                        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
                                             <div className="flex items-center justify-between flex-wrap gap-4">
                                                 <div>
-                                                    <h3 className="text-lg font-semibold text-blue-800">Detailed Submissions</h3>
-                                                    <p className="text-sm text-blue-600">Showing all submissions with candidate, job, status, and owner details</p>
+                                                    <h3 className="text-base font-semibold text-slate-800">Detailed Submissions</h3>
+                                                    <p className="text-sm text-slate-600">Candidate, job, status, and owner</p>
                                                 </div>
-                                                <div className="text-2xl font-bold text-blue-600">{filteredDetailed.length} records</div>
+                                                <div className="text-lg font-semibold text-slate-700">{filteredDetailed.length} records</div>
                                             </div>
-                                            {/* Quick filters */}
                                             <div className="mt-3 flex flex-wrap gap-3 items-center">
-                                                <span className="text-sm font-medium text-gray-700">Quick filters:</span>
+                                                <span className="text-sm font-medium text-slate-600">Filters</span>
                                                 <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}
-                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                                     <option value="">All owners</option>
                                                     {detailedMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
                                                 </select>
                                                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                                     <option value="">All statuses</option>
                                                     {detailedMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
                                                 </select>
                                                 {(filterOwner || filterStatus) && (
                                                     <button type="button" onClick={() => { setFilterOwner(''); setFilterStatus(''); }}
-                                                        className="text-sm text-indigo-600 hover:underline">Clear filters</button>
+                                                        className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
                                                 )}
                                             </div>
                                         </div>
                                         
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                                        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6">
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead>
-                                                        <tr className="border-b-2 border-gray-300 bg-gray-50">
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">ID</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Date</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Candidate</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Job Title</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Client</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Status</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Owner</th>
+                                                        <tr className="border-b border-slate-200 bg-slate-50">
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">ID</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Date</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Candidate</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Job Title</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Client</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Status</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Owner</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {filteredDetailed.length === 0 ? (
                                                             <tr>
-                                                                <td colSpan="7" className="text-center py-12 text-gray-500">
-                                                                    <div className="text-4xl mb-2">📭</div>
-                                                                    {detailedSubmissions.length === 0 ? 'No submissions found for this period' : 'No rows match the filters'}
+                                                                <td colSpan="7" className="text-center py-12 text-slate-500 text-sm">
+                                                                    {detailedSubmissions.length === 0 ? 'No submissions for this period' : 'No rows match the filters'}
                                                                 </td>
                                                             </tr>
                                                         ) : (
                                                             filteredDetailed.map((sub, idx) => {
                                                                 const statusColor = {
-                                                                    'Submitted': 'bg-blue-100 text-blue-800',
-                                                                    'Presented': 'bg-yellow-100 text-yellow-800',
-                                                                    'Client Review': 'bg-purple-100 text-purple-800',
-                                                                    'Interview': 'bg-orange-100 text-orange-800',
-                                                                    'Offered': 'bg-green-100 text-green-800',
-                                                                    'Placed': 'bg-green-200 text-green-900',
-                                                                    'Rejected': 'bg-red-100 text-red-800',
-                                                                    'Withdrawn': 'bg-gray-100 text-gray-800'
-                                                                }[sub.status] || 'bg-gray-100 text-gray-700';
+                                                                    'Submitted': 'bg-slate-100 text-slate-700',
+                                                                    'Presented': 'bg-amber-50 text-amber-800',
+                                                                    'Client Review': 'bg-slate-100 text-slate-700',
+                                                                    'Interview': 'bg-amber-50 text-amber-800',
+                                                                    'Offered': 'bg-emerald-50 text-emerald-800',
+                                                                    'Placed': 'bg-emerald-100 text-emerald-800',
+                                                                    'Rejected': 'bg-red-50 text-red-700',
+                                                                    'Withdrawn': 'bg-slate-100 text-slate-600'
+                                                                }[sub.status] || 'bg-slate-100 text-slate-600';
                                                                 
                                                                 return (
-                                                                    <tr key={sub.id || idx} className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                                                                        <td className="py-2 px-3 text-gray-600 font-mono text-xs">{sub.id}</td>
-                                                                        <td className="py-2 px-3 text-gray-700 whitespace-nowrap">{sub.dateFormatted || 'N/A'}</td>
-                                                                        <td className="py-2 px-3 text-gray-800 font-medium">{sub.candidateName}</td>
-                                                                        <td className="py-2 px-3 text-gray-700 max-w-xs truncate" title={sub.jobTitle}>{sub.jobTitle}</td>
-                                                                        <td className="py-2 px-3 text-gray-600">{sub.clientName}</td>
+                                                                    <tr key={sub.id || idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                                        <td className="py-2 px-3 text-slate-500 font-mono text-xs">{sub.id}</td>
+                                                                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{sub.dateFormatted || '—'}</td>
+                                                                        <td className="py-2 px-3 text-slate-800 font-medium">{sub.candidateName}</td>
+                                                                        <td className="py-2 px-3 text-slate-600 max-w-xs truncate" title={sub.jobTitle}>{sub.jobTitle}</td>
+                                                                        <td className="py-2 px-3 text-slate-500">{sub.clientName}</td>
                                                                         <td className="py-2 px-3">
-                                                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>
                                                                                 {sub.status}
                                                                             </span>
                                                                         </td>
-                                                                        <td className="py-2 px-3 text-gray-700">{sub.ownerName}</td>
+                                                                        <td className="py-2 px-3 text-slate-600">{sub.ownerName}</td>
                                                                     </tr>
                                                                 );
                                                             })
@@ -941,9 +940,9 @@ ANALYTICS_TEMPLATE = '''
                                                     a.click();
                                                     window.URL.revokeObjectURL(url);
                                                 }}
-                                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
                                             >
-                                                📥 Export Detailed CSV
+                                                Export CSV
                                             </button>
                                         )}
                                     </>
@@ -951,80 +950,78 @@ ANALYTICS_TEMPLATE = '''
                                 
                                 {viewMode === 'detailed_placements' && (
                                     <>
-                                        {/* Detailed Placements Table - same structure as Detailed Submissions */}
-                                        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                        {/* Detailed Placements Table */}
+                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
                                             <div className="flex items-center justify-between flex-wrap gap-4">
                                                 <div>
-                                                    <h3 className="text-lg font-semibold text-green-800">Detailed Placements</h3>
-                                                    <p className="text-sm text-green-600">Showing all placements with candidate, job, status, and owner details</p>
+                                                    <h3 className="text-base font-semibold text-slate-800">Detailed Placements</h3>
+                                                    <p className="text-sm text-slate-600">Candidate, job, status, and owner</p>
                                                 </div>
-                                                <div className="text-2xl font-bold text-green-600">{filteredDetailedPlacements.length} records</div>
+                                                <div className="text-lg font-semibold text-slate-700">{filteredDetailedPlacements.length} records</div>
                                             </div>
-                                            {/* Quick filters */}
                                             <div className="mt-3 flex flex-wrap gap-3 items-center">
-                                                <span className="text-sm font-medium text-gray-700">Quick filters:</span>
+                                                <span className="text-sm font-medium text-slate-600">Filters</span>
                                                 <select value={filterPlacementOwner} onChange={(e) => setFilterPlacementOwner(e.target.value)}
-                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                                     <option value="">All owners</option>
                                                     {detailedPlacementsMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
                                                 </select>
                                                 <select value={filterPlacementStatus} onChange={(e) => setFilterPlacementStatus(e.target.value)}
-                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
                                                     <option value="">All statuses</option>
                                                     {detailedPlacementsMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
                                                 </select>
                                                 {(filterPlacementOwner || filterPlacementStatus) && (
                                                     <button type="button" onClick={() => { setFilterPlacementOwner(''); setFilterPlacementStatus(''); }}
-                                                        className="text-sm text-indigo-600 hover:underline">Clear filters</button>
+                                                        className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
                                                 )}
                                             </div>
                                         </div>
                                         
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                                        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6">
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead>
-                                                        <tr className="border-b-2 border-gray-300 bg-gray-50">
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">ID</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Date</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Candidate</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Job Title</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Client</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Status</th>
-                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Owner</th>
+                                                        <tr className="border-b border-slate-200 bg-slate-50">
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">ID</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Date</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Candidate</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Job Title</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Client</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Status</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Owner</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {filteredDetailedPlacements.length === 0 ? (
                                                             <tr>
-                                                                <td colSpan="7" className="text-center py-12 text-gray-500">
-                                                                    <div className="text-4xl mb-2">📭</div>
-                                                                    {detailedPlacements.length === 0 ? 'No placements found for this period' : 'No rows match the filters'}
+                                                                <td colSpan="7" className="text-center py-12 text-slate-500 text-sm">
+                                                                    {detailedPlacements.length === 0 ? 'No placements for this period' : 'No rows match the filters'}
                                                                 </td>
                                                             </tr>
                                                         ) : (
                                                             filteredDetailedPlacements.map((plc, idx) => {
                                                                 const statusColor = {
-                                                                    'Approved': 'bg-green-100 text-green-800',
-                                                                    'Active': 'bg-blue-100 text-blue-800',
-                                                                    'Denied': 'bg-red-100 text-red-800',
-                                                                    'Pending': 'bg-yellow-100 text-yellow-800',
-                                                                    'Terminated': 'bg-gray-100 text-gray-800'
-                                                                }[plc.status] || 'bg-gray-100 text-gray-700';
+                                                                    'Approved': 'bg-emerald-50 text-emerald-800',
+                                                                    'Active': 'bg-slate-100 text-slate-700',
+                                                                    'Denied': 'bg-red-50 text-red-700',
+                                                                    'Pending': 'bg-amber-50 text-amber-800',
+                                                                    'Terminated': 'bg-slate-100 text-slate-600'
+                                                                }[plc.status] || 'bg-slate-100 text-slate-600';
                                                                 
                                                                 return (
-                                                                    <tr key={plc.id || idx} className="border-b border-gray-100 hover:bg-green-50 transition-colors">
-                                                                        <td className="py-2 px-3 text-gray-600 font-mono text-xs">{plc.id}</td>
-                                                                        <td className="py-2 px-3 text-gray-700 whitespace-nowrap">{plc.dateFormatted || 'N/A'}</td>
-                                                                        <td className="py-2 px-3 text-gray-800 font-medium">{plc.candidateName}</td>
-                                                                        <td className="py-2 px-3 text-gray-700 max-w-xs truncate" title={plc.jobTitle}>{plc.jobTitle}</td>
-                                                                        <td className="py-2 px-3 text-gray-600">{plc.clientName}</td>
+                                                                    <tr key={plc.id || idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                                        <td className="py-2 px-3 text-slate-500 font-mono text-xs">{plc.id}</td>
+                                                                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{plc.dateFormatted || '—'}</td>
+                                                                        <td className="py-2 px-3 text-slate-800 font-medium">{plc.candidateName}</td>
+                                                                        <td className="py-2 px-3 text-slate-600 max-w-xs truncate" title={plc.jobTitle}>{plc.jobTitle}</td>
+                                                                        <td className="py-2 px-3 text-slate-500">{plc.clientName}</td>
                                                                         <td className="py-2 px-3">
-                                                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>
                                                                                 {plc.status}
                                                                             </span>
                                                                         </td>
-                                                                        <td className="py-2 px-3 text-gray-700">{plc.ownerName}</td>
+                                                                        <td className="py-2 px-3 text-slate-600">{plc.ownerName}</td>
                                                                     </tr>
                                                                 );
                                                             })
@@ -1050,24 +1047,23 @@ ANALYTICS_TEMPLATE = '''
                                                     a.click();
                                                     window.URL.revokeObjectURL(url);
                                                 }}
-                                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
                                             >
-                                                📥 Export Detailed CSV
+                                                Export CSV
                                             </button>
                                         )}
                                     </>
                                 )}
                                 
-                                {/* Explore API section - show in all views */}
-                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-2">Explore API &amp; available fields</h3>
-                                    <p className="text-sm text-gray-600 mb-3">Use meta endpoints to see all queryable fields:</p>
+                                {/* Explore API - show in all views */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                                    <h3 className="text-sm font-medium text-slate-800 mb-2">Explore API</h3>
                                     <div className="flex flex-wrap gap-2">
-                                        <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
-                                        <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
-                                        <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Submissions (raw)</a>
-                                        <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Placements (raw)</a>
-                                        <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
+                                        <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">JobSubmission meta</a>
+                                        <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placement meta</a>
+                                        <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Submissions (raw)</a>
+                                        <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placements (raw)</a>
+                                        <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Recruiters (raw)</a>
                                     </div>
                                 </div>
                             </>
@@ -1310,7 +1306,7 @@ def home():
 @app.route('/analytics')
 def analytics():
     """Analytics dashboard page"""
-    return render_template_string(ANALYTICS_TEMPLATE)
+    return render_template_string(ANALYTICS_TEMPLATE, logo_url=LOGO_URL)
 
 @app.route('/login')
 def login():
