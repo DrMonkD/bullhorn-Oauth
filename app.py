@@ -217,6 +217,9 @@ ANALYTICS_TEMPLATE = '''
             const [filterPlacementOwner, setFilterPlacementOwner] = useState('');
             const [filterPlacementStatus, setFilterPlacementStatus] = useState('');
             
+            // Basic view: filter by submission owner (submitter)
+            const [filterBasicOwner, setFilterBasicOwner] = useState('');
+            
             // Analytics data
             const [recruitersData, setRecruitersData] = useState([]);
             
@@ -354,10 +357,46 @@ ANALYTICS_TEMPLATE = '''
                 const s = String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim();
                 return BOOKED_STATUSES.indexOf(s) >= 0;
             };
+            // Basic: unique owners from submissions (submitter = sendingUser)
+            const basicOwnerList = useMemo(() => {
+                const m = new Map();
+                submissions.forEach(function(sub){
+                    var u = sub.sendingUser;
+                    if (!u || u.id == null) return;
+                    var name = (String(u.firstName || '') + ' ' + String(u.lastName || '')).trim() || 'Unknown';
+                    m.set(String(u.id), name);
+                });
+                return Array.from(m.entries()).map(function(kv){ return { id: kv[0], name: kv[1] }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+            }, [submissions]);
+            // (candidateId,jobId) set for selected owner: only placements matching these count when filtered
+            const ownerCandidateJobSet = useMemo(() => {
+                if (!filterBasicOwner) return null;
+                var s = new Set();
+                submissions.forEach(function(sub){
+                    if (!sub.sendingUser || String(sub.sendingUser.id) !== String(filterBasicOwner)) return;
+                    var cid = sub.candidate && sub.candidate.id;
+                    var jid = sub.jobOrder && sub.jobOrder.id;
+                    if (cid != null && jid != null) s.add(String(cid) + ',' + String(jid));
+                });
+                return s;
+            }, [submissions, filterBasicOwner]);
+            const filteredSubmissions = useMemo(() => {
+                if (!filterBasicOwner) return submissions;
+                return submissions.filter(function(sub){ return sub.sendingUser && String(sub.sendingUser.id) === String(filterBasicOwner); });
+            }, [submissions, filterBasicOwner]);
+            const filteredPlacements = useMemo(() => {
+                if (!filterBasicOwner || !ownerCandidateJobSet) return placements;
+                return placements.filter(function(pl){
+                    var cid = pl.candidate && pl.candidate.id;
+                    var jid = pl.jobOrder && pl.jobOrder.id;
+                    if (cid == null || jid == null) return false;
+                    return ownerCandidateJobSet.has(String(cid) + ',' + String(jid));
+                });
+            }, [placements, filterBasicOwner, ownerCandidateJobSet]);
             const stats = useMemo(() => {
-                const totalSubmissions = submissions.length;
-                const totalPlacements = placements.length;
-                const totalBooked = placements.filter(isBooked).length;
+                const totalSubmissions = filteredSubmissions.length;
+                const totalPlacements = filteredPlacements.length;
+                const totalBooked = filteredPlacements.filter(isBooked).length;
                 const conversionRate = totalSubmissions > 0 ? (totalBooked / totalSubmissions * 100).toFixed(1) : 0;
                 return {
                     totalSubmissions,
@@ -365,7 +404,7 @@ ANALYTICS_TEMPLATE = '''
                     totalBooked,
                     conversionRate: parseFloat(conversionRate)
                 };
-            }, [submissions, placements]);
+            }, [filteredSubmissions, filteredPlacements]);
             
             // Chart data: By Week only (we have dateAdded)
             const getWeekNumber = (dateMs) => {
@@ -379,14 +418,14 @@ ANALYTICS_TEMPLATE = '''
             
             const chartData = useMemo(() => {
                 const weekMap = new Map();
-                submissions.forEach(sub => {
+                filteredSubmissions.forEach(sub => {
                     if (!sub.dateAdded) return;
                     const week = getWeekNumber(sub.dateAdded);
                     const key = `Week ${week}`;
                     if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, booked: 0 });
                     weekMap.get(key).submissions++;
                 });
-                placements.forEach(place => {
+                filteredPlacements.forEach(place => {
                     if (!place.dateAdded) return;
                     const week = getWeekNumber(place.dateAdded);
                     const key = `Week ${week}`;
@@ -399,7 +438,7 @@ ANALYTICS_TEMPLATE = '''
                     const weekB = parseInt(b.name.replace('Week ', ''), 10);
                     return weekA - weekB;
                 });
-            }, [submissions, placements]);
+            }, [filteredSubmissions, filteredPlacements]);
             
             // Export CSV (by-week data)
             const exportCSV = () => {
@@ -637,7 +676,25 @@ ANALYTICS_TEMPLATE = '''
                             <>
                                 {viewMode === 'basic' && (
                                     <>
-                                        {/* Basic View - Existing */}
+                                        {/* Basic View - Owner filter (submitter) */}
+                                        <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <span className="text-sm font-medium text-gray-700">Filter by owner (submitter):</span>
+                                                <select
+                                                    value={filterBasicOwner}
+                                                    onChange={(e) => setFilterBasicOwner(e.target.value)}
+                                                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+                                                >
+                                                    <option value="">All</option>
+                                                    {basicOwnerList.map(function(o){ return <option key={o.id} value={o.id}>{o.name}</option>; })}
+                                                </select>
+                                                {filterBasicOwner && (
+                                                    <button type="button" onClick={() => setFilterBasicOwner('')}
+                                                        className="text-sm text-indigo-600 hover:underline">Clear</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* Basic View - Stats & Chart */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                                 <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
@@ -1606,7 +1663,8 @@ def api_submissions():
         if detailed:
             fields = 'id,dateAdded,status,candidate(id,firstName,lastName),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
         else:
-            fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName)'
+            # Basic: sendingUser (owner) + candidate(id), jobOrder(id) for owner filter and placement–submission link
+            fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName),candidate(id),jobOrder(id)'
         
         params = {
             'BhRestToken': tokens['bh_rest_token'],
@@ -1677,8 +1735,8 @@ def api_placements():
         
         url = f"{rest_url}query/Placement"
         
-        # id, dateAdded, status (status needed for Booked: Requested Credentialing, Credentialed, On assignment, Assignment completed)
-        fields = 'id,dateAdded,status'
+        # id, dateAdded, status, candidate(id), jobOrder(id) for owner filter (link to submission’s submitter)
+        fields = 'id,dateAdded,status,candidate(id),jobOrder(id)'
         
         params = {
             'BhRestToken': tokens['bh_rest_token'],
