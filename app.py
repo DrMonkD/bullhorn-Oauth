@@ -188,7 +188,7 @@ ANALYTICS_TEMPLATE = '''
             return (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                     {title && <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>}
-                    <div style={{ "{{" }}{"height": (height || 300) + "px"{{ "}}" }}>
+                    <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
                     </div>
                 </div>
@@ -978,10 +978,39 @@ def home():
         refresh_interval=REFRESH_INTERVAL_MINUTES
     )
 
+# #region agent log
+_DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.cursor', 'debug.log')
+def _log(m):
+    try:
+        with open(_DEBUG_LOG, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({**m, 'timestamp': int(datetime.now().timestamp()*1000), 'sessionId': 'debug-session'}) + '\n')
+    except Exception:
+        pass
+# #endregion
+
 @app.route('/analytics')
 def analytics():
     """Analytics dashboard page"""
-    return render_template_string(ANALYTICS_TEMPLATE)
+    # #region agent log
+    try:
+        i = ANALYTICS_TEMPLATE.find('style=')
+        raw = ANALYTICS_TEMPLATE[max(0,i-60):i+140] if i >= 0 else ''
+        _log({'location':'analytics:before_render','message':'raw template style region','data':{'snippet':raw,'idx':i},'hypothesisId':'D'})
+    except Exception as e:
+        _log({'location':'analytics:raw_err','message':'extract raw failed','data':{'err':str(e)},'hypothesisId':'D'})
+    try:
+        html = render_template_string(ANALYTICS_TEMPLATE)
+        j = html.find('style=')
+        sni = html[max(0,j-50):j+130] if j >= 0 else ''
+        _log({'location':'analytics:after_render','message':'rendered style region','data':{'snippet':sni,'idx':j,'html_len':len(html)},'hypothesisId':'A'})
+        # Inject DEBUG comment for View Source (avoid --> in snippet)
+        dbg = '<!-- DEBUG style_snippet: ' + sni.replace('-->', '[END]') + ' -->'
+        html = html.replace('</body>', dbg + '\n</body>', 1)
+        return html
+    except Exception as e:
+        _log({'location':'analytics:render_err','message':'render_template_string failed','data':{'err':str(e),'type':type(e).__name__},'hypothesisId':'C'})
+        raise
+    # #endregion
 
 @app.route('/login')
 def login():
