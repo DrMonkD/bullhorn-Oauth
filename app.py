@@ -141,11 +141,11 @@ ANALYTICS_TEMPLATE = '''
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.0/dist/Recharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
         // #region agent log - CDN load check
         window.addEventListener('DOMContentLoaded', function() {
-            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:DOMContentLoaded',message:'DOM ready - checking libs',data:{React:typeof React,ReactDOM:typeof ReactDOM,Recharts:typeof Recharts,windowRecharts:typeof window.Recharts,ReactIs:typeof ReactIs},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G-dom-ready'})}).catch(function(){});
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:DOMContentLoaded',message:'DOM ready - checking libs',data:{React:typeof React,ReactDOM:typeof ReactDOM,Chart:typeof Chart,windowChart:typeof window.Chart},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G-dom-ready'})}).catch(function(){});
         });
         // #endregion
     </script>
@@ -159,22 +159,54 @@ ANALYTICS_TEMPLATE = '''
     </div>
     
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
         
-        // Safely get Recharts components - try multiple ways
-        let RechartsComponents = null;
-        if (typeof window !== 'undefined' && window.Recharts) {
-            RechartsComponents = window.Recharts;
-        } else if (typeof Recharts !== 'undefined') {
-            RechartsComponents = Recharts;
-        }
-        
-        const hasRecharts = RechartsComponents !== null;
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = RechartsComponents || {};
+        const hasChartJs = typeof Chart !== 'undefined' || (typeof window !== 'undefined' && typeof window.Chart !== 'undefined');
         
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:top-level',message:'Recharts components check',data:{hasRecharts:hasRecharts,BarChartType:typeof BarChart,ResponsiveContainerType:typeof ResponsiveContainer,windowRechartsType:typeof window.Recharts},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F-components-destructure'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:top-level',message:'Chart.js check',data:{hasChartJs:hasChartJs,ChartType:typeof (typeof window !== 'undefined' ? window.Chart : Chart)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F-components-destructure'})}).catch(()=>{});
         // #endregion
+        
+        // Bar chart via Chart.js (works from CDN)
+        function BarChartCanvas({ data, labelsKey, datasets, title, height }) {
+            const canvasRef = useRef(null);
+            const chartRef = useRef(null);
+            const ChartLib = typeof window !== 'undefined' ? window.Chart : (typeof Chart !== 'undefined' ? Chart : null);
+            
+            useEffect(function() {
+                if (!ChartLib || !data || data.length === 0) return;
+                var ctx = canvasRef.current && canvasRef.current.getContext('2d');
+                if (!ctx) return;
+                if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+                chartRef.current = new ChartLib(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(function(d) { return d[labelsKey]; }),
+                        datasets: datasets.map(function(ds) {
+                            return { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }), backgroundColor: ds.color };
+                        })
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'top' } },
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+                return function() { if (chartRef.current) chartRef.current.destroy(); };
+            }, [data, labelsKey]);
+            
+            if (!ChartLib) return <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg"><p className="text-yellow-800">Charts unavailable (Chart.js failed to load).</p></div>;
+            if (!data || data.length === 0) return null;
+            return (
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    {title && <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>}
+                    <div style={{ height: height || 300 }}>
+                        <canvas ref={canvasRef}></canvas>
+                    </div>
+                </div>
+            );
+        }
 
         function AnalyticsDashboard() {
             const [submissions, setSubmissions] = useState([]);
@@ -521,28 +553,18 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         
-                                        {hasRecharts ? (
-                                            <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements by Week</h3>
-                                                    <ResponsiveContainer width="100%" height={300}>
-                                                        <BarChart data={chartData}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="placements" fill="#10b981" name="Placements" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                                <p className="text-yellow-800">Charts unavailable (Recharts failed to load).</p>
-                                            </div>
-                                        )}
+                                        <div className="mb-6">
+                                            <BarChartCanvas
+                                                data={chartData}
+                                                labelsKey="name"
+                                                datasets={[
+                                                    { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
+                                                    { dataKey: 'placements', label: 'Placements', color: 'rgba(16,185,129,0.8)' }
+                                                ]}
+                                                title="Submissions vs Placements by Week"
+                                                height={300}
+                                            />
+                                        </div>
                                     </>
                                 )}
                                 
@@ -581,28 +603,22 @@ ANALYTICS_TEMPLATE = '''
                                             })()}
                                         </div>
                                         
-                                        {hasRecharts && weeklyData.length > 0 && (
+                                        {weeklyData.length > 0 && (
                                             <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Weekly Analytics</h3>
-                                                    <ResponsiveContainer width="100%" height={350}>
-                                                        <BarChart data={weeklyData.map(w => ({
-                                                            name: `${w.weekStart.split('-')[1]}/${w.weekStart.split('-')[2]}`,
-                                                            submissions: w.submissions,
-                                                            presented: w.presented,
-                                                            placed: w.placed
-                                                        }))}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
-                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
+                                                <BarChartCanvas
+                                                    data={weeklyData.map(function(w) {
+                                                        var p = (w.weekStart || '').split('-');
+                                                        return { name: (p[1] || '') + '/' + (p[2] || ''), submissions: w.submissions, presented: w.presented, placed: w.placed };
+                                                    })}
+                                                    labelsKey="name"
+                                                    datasets={[
+                                                        { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
+                                                        { dataKey: 'presented', label: 'Presented', color: 'rgba(245,158,11,0.8)' },
+                                                        { dataKey: 'placed', label: 'Placed', color: 'rgba(16,185,129,0.8)' }
+                                                    ]}
+                                                    title="Weekly Analytics"
+                                                    height={350}
+                                                />
                                             </div>
                                         )}
                                         
@@ -636,28 +652,22 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         
-                                        {hasRecharts && monthlyData.byRecruiter && monthlyData.byRecruiter.length > 0 && (
+                                        {monthlyData.byRecruiter && monthlyData.byRecruiter.length > 0 && (
                                             <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Monthly Analytics by Recruiter</h3>
-                                                    <ResponsiveContainer width="100%" height={350}>
-                                                        <BarChart data={monthlyData.byRecruiter.map(r => ({
-                                                            name: r.name.length > 15 ? r.name.substring(0, 15) + '...' : r.name,
-                                                            submissions: r.submissions,
-                                                            presented: r.presented,
-                                                            placed: r.placed
-                                                        }))}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
-                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
+                                                <BarChartCanvas
+                                                    data={monthlyData.byRecruiter.map(function(r) {
+                                                        var n = r.name || '';
+                                                        return { name: n.length > 15 ? n.substring(0, 15) + '...' : n, submissions: r.submissions, presented: r.presented, placed: r.placed };
+                                                    })}
+                                                    labelsKey="name"
+                                                    datasets={[
+                                                        { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
+                                                        { dataKey: 'presented', label: 'Presented', color: 'rgba(245,158,11,0.8)' },
+                                                        { dataKey: 'placed', label: 'Placed', color: 'rgba(16,185,129,0.8)' }
+                                                    ]}
+                                                    title="Monthly Analytics by Recruiter"
+                                                    height={350}
+                                                />
                                             </div>
                                         )}
                                     </>
@@ -836,7 +846,7 @@ ANALYTICS_TEMPLATE = '''
         function initApp() {
             const rootEl = document.getElementById('root');
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp',message:'initApp called',data:{rootElExists:!!rootEl,windowRecharts:typeof window.Recharts,globalRecharts:typeof Recharts,windowReact:typeof window.React,windowReactDOM:typeof window.ReactDOM},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-global-vars'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp',message:'initApp called',data:{rootElExists:!!rootEl,windowChart:typeof window.Chart,windowReact:typeof window.React,windowReactDOM:typeof window.ReactDOM},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-global-vars'})}).catch(()=>{});
             // #endregion
             if (!rootEl) {
                 console.error('Root element not found');
@@ -854,17 +864,8 @@ ANALYTICS_TEMPLATE = '''
             }
             
             // #region agent log
-            const rechartsKeys = typeof window.Recharts === 'object' ? Object.keys(window.Recharts || {}).slice(0,10) : [];
-            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:recharts-check',message:'Recharts detail check',data:{windowRechartsType:typeof window.Recharts,rechartsKeys:rechartsKeys,hasBarChart:!!(window.Recharts && window.Recharts.BarChart),hasResponsiveContainer:!!(window.Recharts && window.Recharts.ResponsiveContainer)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-recharts-components'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:chart-check',message:'Chart.js check',data:{hasChart:typeof window.Chart !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-recharts-components'})}).catch(()=>{});
             // #endregion
-            
-            // Recharts is optional - warn but don't block
-            if (typeof window.Recharts === 'undefined' && typeof Recharts === 'undefined') {
-                console.warn('Recharts library not loaded - charts will be disabled');
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:recharts-missing',message:'Recharts NOT available',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C-recharts-missing'})}).catch(()=>{});
-                // #endregion
-            }
             
             console.log('Rendering AnalyticsDashboard...');
             try {
@@ -875,7 +876,7 @@ ANALYTICS_TEMPLATE = '''
                 }
                 console.log('Component rendered successfully');
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:rendered',message:'Component rendered',data:{hasRecharts:typeof window.Recharts !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D-render-success'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/17a4d052-773d-4fbd-aff1-ea318feaa11e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'analytics:initApp:rendered',message:'Component rendered',data:{hasChart:typeof window.Chart !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D-render-success'})}).catch(()=>{});
                 // #endregion
             } catch (err) {
                 console.error('Render error:', err);
