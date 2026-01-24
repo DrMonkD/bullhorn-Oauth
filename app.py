@@ -420,15 +420,17 @@ ANALYTICS_TEMPLATE = '''
                 const totalPlacements = filteredPlacements.length;
                 const totalBooked = filteredPlacements.filter(isBooked).length;
                 const totalCancelled = filteredPlacements.filter(isCancelled).length;
+                const totalEverBooked = totalBooked + totalCancelled;
                 const conversionRate = totalSubmissions > 0 ? (totalBooked / totalSubmissions * 100).toFixed(1) : 0;
-                const bookedToCancellationRatio = totalCancelled > 0 ? totalBooked / totalCancelled : null;
+                const cancelledShare = totalEverBooked > 0 ? (totalCancelled / totalEverBooked * 100) : null;
                 return {
                     totalSubmissions,
                     totalPlacements,
                     totalBooked,
                     totalCancelled,
+                    totalEverBooked,
                     conversionRate: parseFloat(conversionRate),
-                    bookedToCancellationRatio
+                    cancelledShare
                 };
             }, [filteredSubmissions, filteredPlacements]);
             
@@ -486,11 +488,11 @@ ANALYTICS_TEMPLATE = '''
                 if (rate >= 10) return 'text-yellow-600 font-semibold';
                 return 'text-red-600 font-semibold';
             };
-            const getBookedToCancellationColor = (ratio) => {
-                if (ratio == null) return 'text-gray-600';
-                if (ratio >= 2) return 'text-green-600 font-semibold';
-                if (ratio >= 1) return 'text-yellow-600 font-semibold';
-                return 'text-red-600 font-semibold';
+            const getCancelledShareColor = (pct) => {
+                if (pct == null) return 'text-gray-600';
+                if (pct >= 50) return 'text-red-600 font-semibold';
+                if (pct >= 25) return 'text-yellow-600 font-semibold';
+                return 'text-green-600 font-semibold';
             };
             
             // Detailed: unique owners/statuses and filtered list
@@ -752,13 +754,18 @@ ANALYTICS_TEMPLATE = '''
                                                 <div className="text-3xl font-bold text-red-600">{stats.totalCancelled}</div>
                                             </div>
                                             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Booked / Cancelled</div>
-                                                <div className={`text-3xl font-bold ${getBookedToCancellationColor(stats.bookedToCancellationRatio)}`}>
-                                                    {stats.bookedToCancellationRatio != null ? stats.bookedToCancellationRatio.toFixed(1) : '—'}
+                                                <div className="text-sm text-gray-600 mb-1">Cancelled / (Booked+Cancelled)</div>
+                                                <div className="text-3xl font-bold flex justify-between items-baseline gap-2">
+                                                    <span>{stats.totalCancelled}/{stats.totalEverBooked}</span>
+                                                    <span className={getCancelledShareColor(stats.cancelledShare)}>
+                                                        {stats.cancelledShare != null ? '(' + stats.cancelledShare.toFixed(1) + '%)' : '(—)'}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
                                         
+                                        <div className="flex flex-col lg:flex-row gap-6">
+                                            <div className="flex-1 min-w-0">
                                         <div className="mb-6">
                                             <BarChartCanvas
                                                 data={chartData}
@@ -772,6 +779,21 @@ ANALYTICS_TEMPLATE = '''
                                                 title="Submissions, Placements, Booked & Cancelled by Week"
                                                 height={300}
                                             />
+                                        </div>
+                                            </div>
+                                            <aside className="lg:w-80 flex-shrink-0">
+                                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-gray-700">
+                                                    <h4 className="font-semibold text-gray-800 mb-3">How we calculate</h4>
+                                                    <ul className="space-y-2 list-none">
+                                                        <li><strong>Submissions:</strong> In selected date range. With owner: only that owner (submitter).</li>
+                                                        <li><strong>Placements:</strong> In range. With owner: only (candidate, job) submitted by that owner; submissions 12 months back when owner set for linkage.</li>
+                                                        <li><strong>Booked:</strong> Status in Requested Credentialing, Credentialed, On assignment, Assignment completed. Current only; excludes cancelled. Linked to owner by (candidate, job).</li>
+                                                        <li><strong>Cancelled:</strong> Status in Provider, Concord, Client, or Credentialing Cancelled. Linked to owner by (candidate, job).</li>
+                                                        <li><strong>Booked / Submitted:</strong> Booked ÷ Submissions × 100.</li>
+                                                        <li><strong>Cancelled / (Booked+Cancelled):</strong> Cancelled ÷ (Booked + Cancelled). Of those who reached booked or were cancelled, the share cancelled. Denominator = Booked + Cancelled.</li>
+                                                    </ul>
+                                                </div>
+                                            </aside>
                                         </div>
                                     </>
                                 )}
