@@ -201,7 +201,7 @@ ANALYTICS_TEMPLATE = '''
             return (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                     {title && <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>}
-                    <div style={{ height: height || 300 }}>
+                    <div style="{{ "{{" }} height: height || 300 {{ "}}" }}">
                         <canvas ref={canvasRef}></canvas>
                     </div>
                 </div>
