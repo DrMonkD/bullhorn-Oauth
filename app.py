@@ -262,15 +262,23 @@ ANALYTICS_TEMPLATE = '''
                 return { start: startDate || '2020-01-01', end: endDate || '2030-12-31' };
             }, [periodType, year, month, weekDate, startDate, endDate]);
             
-            // Fetch basic data (existing)
+            // Fetch basic data (existing). When owner selected, submissions use start − EXTENDED_SUBMISSIONS_MONTHS for owner–placement linkage.
             const fetchBasicData = async () => {
                 setLoading(true);
                 setError(null);
                 try {
                     var r = dateRange;
+                    var subsStart = r.start, subsEnd = r.end;
+                    if (filterBasicOwner) {
+                        var d = new Date(r.start + 'T12:00:00');
+                        d.setMonth(d.getMonth() - EXTENDED_SUBMISSIONS_MONTHS);
+                        subsStart = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
                     console.log('Fetching data for', r.start, 'to', r.end);
+                    var subsUrl = '/api/submissions?start=' + encodeURIComponent(subsStart) + '&end=' + encodeURIComponent(subsEnd);
+                    if (filterBasicOwner) subsUrl += '&count=2000';
                     const [subsRes, placeRes] = await Promise.all([
-                        fetch('/api/submissions?start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end)),
+                        fetch(subsUrl),
                         fetch('/api/placements?start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end))
                     ]);
                     
@@ -349,25 +357,32 @@ ANALYTICS_TEMPLATE = '''
             useEffect(function(){
                 if (viewMode === 'basic') fetchBasicData();
                 else fetchAnalyticsData();
-            }, [dateRange.start, dateRange.end, viewMode]);
+            }, [dateRange.start, dateRange.end, viewMode, filterBasicOwner]);
             
             // Stats (id, dateAdded; placements have status). Booked = Requested Credentialing, Credentialed, On assignment, Assignment completed.
+            const EXTENDED_SUBMISSIONS_MONTHS = 12;
             const BOOKED_STATUSES = ['requested credentialing', 'credentialed', 'on assignment', 'assignment completed'];
             const isBooked = (p) => {
                 const s = String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim();
                 return BOOKED_STATUSES.indexOf(s) >= 0;
             };
+            // Submissions whose dateAdded falls in the user-selected range (needed when submissions response is extended for owner linkage).
+            const submissionsInRange = useMemo(() => {
+                var startMs = new Date(dateRange.start + 'T00:00:00').getTime();
+                var endMs = new Date(dateRange.end + 'T23:59:59.999').getTime();
+                return submissions.filter(function(sub){ var t = sub.dateAdded; return t != null && t >= startMs && t <= endMs; });
+            }, [submissions, dateRange.start, dateRange.end]);
             // Basic: unique owners from submissions (submitter = sendingUser)
             const basicOwnerList = useMemo(() => {
                 const m = new Map();
-                submissions.forEach(function(sub){
+                submissionsInRange.forEach(function(sub){
                     var u = sub.sendingUser;
                     if (!u || u.id == null) return;
                     var name = (String(u.firstName || '') + ' ' + String(u.lastName || '')).trim() || 'Unknown';
                     m.set(String(u.id), name);
                 });
                 return Array.from(m.entries()).map(function(kv){ return { id: kv[0], name: kv[1] }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
-            }, [submissions]);
+            }, [submissionsInRange]);
             // (candidateId,jobId) pairs for selected owner: one candidate to multiple jobs = separate entries, each counts as one book.
             // Only placements whose (candidate, job) was submitted by this owner are included when filtered.
             const ownerCandidateJobSet = useMemo(() => {
@@ -382,9 +397,9 @@ ANALYTICS_TEMPLATE = '''
                 return s;
             }, [submissions, filterBasicOwner]);
             const filteredSubmissions = useMemo(() => {
-                if (!filterBasicOwner) return submissions;
-                return submissions.filter(function(sub){ return sub.sendingUser && String(sub.sendingUser.id) === String(filterBasicOwner); });
-            }, [submissions, filterBasicOwner]);
+                if (!filterBasicOwner) return submissionsInRange;
+                return submissionsInRange.filter(function(sub){ return sub.sendingUser && String(sub.sendingUser.id) === String(filterBasicOwner); });
+            }, [submissionsInRange, filterBasicOwner]);
             // Placements: include only (candidate, job) pairs that this owner submitted. Candidate+job = one placement/book.
             const filteredPlacements = useMemo(() => {
                 if (!filterBasicOwner || !ownerCandidateJobSet) return placements;
@@ -1668,12 +1683,14 @@ def api_submissions():
             # Basic: sendingUser (owner) + candidate(id), jobOrder(id) for owner filter; (candidate,job) links to placement (one candidate to multiple jobs = separate)
             fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName),candidate(id),jobOrder(id)'
         
+        count = request.args.get('count', 500, type=int)
+        count = max(1, min(count, 5000)) if count is not None else 500
         params = {
             'BhRestToken': tokens['bh_rest_token'],
             'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
             'fields': fields,
             'orderBy': '-dateAdded',
-            'count': 500
+            'count': count
         }
         
         response = requests.get(url, params=params, timeout=30)
