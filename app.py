@@ -100,7 +100,8 @@ HTML_TEMPLATE = '''
                 <h3 class="text-lg font-semibold text-gray-800 mb-3">API Endpoints</h3>
                 <div class="space-y-2 text-sm text-gray-700 font-mono">
                     <div class="bg-white p-2 rounded">GET /api/tokens - Get current tokens</div>
-                    <div class="bg-white p-2 rounded">GET /api/submissions?year=YYYY&month=M - Fetch submissions (minimal fields)</div>
+                    <div class="bg-white p-2 rounded">GET /api/submissions?year=YYYY&month=M - Fetch submissions (basic)</div>
+                    <div class="bg-white p-2 rounded">GET /api/submissions/detailed?year=YYYY&month=M - Fetch submissions with full details (candidate, job, client, owner)</div>
                     <div class="bg-white p-2 rounded">GET /api/placements?year=YYYY&month=M - Fetch placements (minimal fields)</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/weekly?year=YYYY&month=M - Weekly analytics with recruiter breakdown</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/monthly?year=YYYY&month=M - Monthly analytics with recruiter breakdown</div>
@@ -170,8 +171,11 @@ ANALYTICS_TEMPLATE = '''
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             
-            // View mode: 'basic', 'weekly', 'monthly', 'recruiter'
+            // View mode: 'basic', 'weekly', 'monthly', 'recruiter', 'detailed'
             const [viewMode, setViewMode] = useState('basic');
+            
+            // Detailed submissions data
+            const [detailedSubmissions, setDetailedSubmissions] = useState([]);
             
             // Analytics data
             const [weeklyData, setWeeklyData] = useState([]);
@@ -252,6 +256,15 @@ ANALYTICS_TEMPLATE = '''
                             setRecruitersData(data.recruiters || []);
                         } else {
                             throw new Error('Failed to fetch recruiter data');
+                        }
+                    } else if (viewMode === 'detailed') {
+                        const res = await fetch(`/api/submissions/detailed?year=${year}&month=${month}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setDetailedSubmissions(data.data || []);
+                        } else {
+                            const errorText = await res.text();
+                            throw new Error(`Failed to fetch detailed submissions: ${errorText.substring(0, 100)}`);
                         }
                     }
                 } catch (err) {
@@ -390,6 +403,16 @@ ANALYTICS_TEMPLATE = '''
                                     }`}
                                 >
                                     Recruiter View
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('detailed')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'detailed' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    📋 Detailed Submissions
                                 </button>
                             </div>
                         </div>
@@ -677,6 +700,107 @@ ANALYTICS_TEMPLATE = '''
                                     </>
                                 )}
                                 
+                                {viewMode === 'detailed' && (
+                                    <>
+                                        {/* Detailed Submissions Table */}
+                                        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h3 className="text-lg font-semibold text-blue-800">Detailed Submissions</h3>
+                                                    <p className="text-sm text-blue-600">Showing all submissions with candidate, job, status, and owner details</p>
+                                                </div>
+                                                <div className="text-2xl font-bold text-blue-600">{detailedSubmissions.length} records</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="border-b-2 border-gray-300 bg-gray-50">
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">ID</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Date</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Candidate</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Job Title</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Client</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Status</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Owner</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {detailedSubmissions.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="7" className="text-center py-12 text-gray-500">
+                                                                    <div className="text-4xl mb-2">📭</div>
+                                                                    No submissions found for this period
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            detailedSubmissions.map((sub, idx) => {
+                                                                const statusColor = {
+                                                                    'Submitted': 'bg-blue-100 text-blue-800',
+                                                                    'Presented': 'bg-yellow-100 text-yellow-800',
+                                                                    'Client Review': 'bg-purple-100 text-purple-800',
+                                                                    'Interview': 'bg-orange-100 text-orange-800',
+                                                                    'Offered': 'bg-green-100 text-green-800',
+                                                                    'Placed': 'bg-green-200 text-green-900',
+                                                                    'Rejected': 'bg-red-100 text-red-800',
+                                                                    'Withdrawn': 'bg-gray-100 text-gray-800'
+                                                                }[sub.status] || 'bg-gray-100 text-gray-700';
+                                                                
+                                                                return (
+                                                                    <tr key={sub.id || idx} className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
+                                                                        <td className="py-2 px-3 text-gray-600 font-mono text-xs">{sub.id}</td>
+                                                                        <td className="py-2 px-3 text-gray-700 whitespace-nowrap">{sub.dateFormatted || 'N/A'}</td>
+                                                                        <td className="py-2 px-3 text-gray-800 font-medium">{sub.candidateName}</td>
+                                                                        <td className="py-2 px-3 text-gray-700 max-w-xs truncate" title={sub.jobTitle}>{sub.jobTitle}</td>
+                                                                        <td className="py-2 px-3 text-gray-600">{sub.clientName}</td>
+                                                                        <td className="py-2 px-3">
+                                                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                                                                                {sub.status}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-2 px-3 text-gray-700">{sub.ownerName}</td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Export CSV for detailed */}
+                                        {detailedSubmissions.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    const rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
+                                                    detailedSubmissions.forEach(s => rows.push([
+                                                        String(s.id || ''),
+                                                        s.dateFormatted || '',
+                                                        s.candidateName || '',
+                                                        s.jobTitle || '',
+                                                        s.clientName || '',
+                                                        s.status || '',
+                                                        s.ownerName || ''
+                                                    ]));
+                                                    const csv = rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(',')).join('\\n');
+                                                    const blob = new Blob([csv], { type: 'text/csv' });
+                                                    const url = window.URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `detailed_submissions_${year}_${month}.csv`;
+                                                    a.click();
+                                                    window.URL.revokeObjectURL(url);
+                                                }}
+                                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                            >
+                                                📥 Export Detailed CSV
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                                
                                 {/* Explore API section - show in all views */}
                                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Explore API &amp; available fields</h3>
@@ -684,6 +808,7 @@ ANALYTICS_TEMPLATE = '''
                                     <div className="flex flex-wrap gap-2">
                                         <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
                                         <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
+                                        <a href={`/api/submissions/detailed?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Submissions (raw)</a>
                                         <a href={`/api/analytics/weekly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Weekly (raw)</a>
                                         <a href={`/api/analytics/monthly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Monthly (raw)</a>
                                         <a href={`/api/analytics/recruiters?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
@@ -1212,7 +1337,7 @@ def api_refresh():
 
 @app.route('/api/submissions')
 def api_submissions():
-    """Fetch submissions from Bullhorn"""
+    """Fetch submissions from Bullhorn with full details"""
     tokens = load_tokens()
     
     if not tokens or not tokens.get('bh_rest_token'):
@@ -1221,6 +1346,7 @@ def api_submissions():
     # Get parameters
     year = request.args.get('year', datetime.now().year, type=int)
     month = request.args.get('month', 1, type=int)
+    detailed = request.args.get('detailed', 'false').lower() == 'true'
     
     # Calculate date range
     start_date = f"{year}-{month:02d}-01"
@@ -1243,8 +1369,12 @@ def api_submissions():
             rest_url += '/'
         
         url = f"{rest_url}query/JobSubmission"
-        # Minimal fields only - no nested associations to avoid 400 Bad Request
-        fields = 'id,dateAdded'
+        
+        # Full fields for detailed view - includes candidate, job, owner info
+        if detailed:
+            fields = 'id,dateAdded,status,candidate(id,firstName,lastName),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
+        else:
+            fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName)'
         
         params = {
             'BhRestToken': tokens['bh_rest_token'],
@@ -1260,11 +1390,36 @@ def api_submissions():
         
         submissions = data.get('data', [])
         
+        # Format detailed data for easier frontend consumption
+        if detailed:
+            formatted = []
+            for sub in submissions:
+                candidate = sub.get('candidate', {}) or {}
+                job = sub.get('jobOrder', {}) or {}
+                owner = sub.get('sendingUser', {}) or {}
+                client = job.get('clientCorporation', {}) or {}
+                
+                formatted.append({
+                    'id': sub.get('id'),
+                    'dateAdded': sub.get('dateAdded'),
+                    'dateFormatted': datetime.fromtimestamp(sub.get('dateAdded', 0)/1000).strftime('%Y-%m-%d %H:%M') if sub.get('dateAdded') else None,
+                    'status': sub.get('status', 'Unknown'),
+                    'candidateId': candidate.get('id'),
+                    'candidateName': f"{candidate.get('firstName', '')} {candidate.get('lastName', '')}".strip() or 'Unknown',
+                    'jobId': job.get('id'),
+                    'jobTitle': job.get('title', 'Unknown'),
+                    'clientName': client.get('name', 'Unknown'),
+                    'ownerId': owner.get('id'),
+                    'ownerName': f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or 'Unknown'
+                })
+            submissions = formatted
+        
         return jsonify({
             'success': True,
             'count': len(submissions),
             'year': year,
             'month': month,
+            'detailed': detailed,
             'data': submissions
         })
     
@@ -1586,6 +1741,88 @@ def api_analytics_monthly():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/submissions/detailed')
+def api_submissions_detailed():
+    """Fetch detailed submissions with all fields - candidate, job, status, owner"""
+    tokens = load_tokens()
+    
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # Get parameters
+    year = request.args.get('year', datetime.now().year, type=int)
+    month = request.args.get('month', 1, type=int)
+    
+    # Calculate date range
+    import calendar
+    start_date = datetime(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    start_ms = int(start_date.timestamp() * 1000)
+    end_ms = int(end_date.timestamp() * 1000)
+    
+    # Query Bullhorn
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        
+        url = f"{rest_url}query/JobSubmission"
+        
+        # Full fields including candidate, job, client, and owner
+        fields = 'id,dateAdded,status,candidate(id,firstName,lastName,email),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
+        
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+        
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        
+        submissions = data.get('data', [])
+        
+        # Format detailed data
+        formatted = []
+        for sub in submissions:
+            candidate = sub.get('candidate', {}) or {}
+            job = sub.get('jobOrder', {}) or {}
+            owner = sub.get('sendingUser', {}) or {}
+            client = job.get('clientCorporation', {}) or {}
+            
+            formatted.append({
+                'id': sub.get('id'),
+                'dateAdded': sub.get('dateAdded'),
+                'dateFormatted': datetime.fromtimestamp(sub.get('dateAdded', 0)/1000).strftime('%Y-%m-%d %H:%M') if sub.get('dateAdded') else None,
+                'status': sub.get('status', 'Unknown'),
+                'candidateId': candidate.get('id'),
+                'candidateName': f"{candidate.get('firstName', '')} {candidate.get('lastName', '')}".strip() or 'Unknown',
+                'candidateEmail': candidate.get('email', ''),
+                'jobId': job.get('id'),
+                'jobTitle': job.get('title', 'Unknown'),
+                'clientName': client.get('name', 'Unknown'),
+                'ownerId': owner.get('id'),
+                'ownerName': f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or 'Unknown'
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(formatted),
+            'year': year,
+            'month': month,
+            'data': formatted
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/api/analytics/recruiters')
 def api_analytics_recruiters():
