@@ -103,6 +103,7 @@ HTML_TEMPLATE = '''
                     <div class="bg-white p-2 rounded">GET /api/submissions?year=YYYY&month=M - Fetch submissions (basic)</div>
                     <div class="bg-white p-2 rounded">GET /api/submissions/detailed?year=YYYY&month=M - Fetch submissions with full details (candidate, job, client, owner)</div>
                     <div class="bg-white p-2 rounded">GET /api/placements?year=YYYY&month=M - Fetch placements (minimal fields)</div>
+                    <div class="bg-white p-2 rounded">GET /api/placements/detailed?year=YYYY&month=M - Fetch placements with full details (candidate, job, client, owner)</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/weekly?year=YYYY&month=M - Weekly analytics with recruiter breakdown</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/monthly?year=YYYY&month=M - Monthly analytics with recruiter breakdown</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/recruiters?year=YYYY&month=M - Recruiter leaderboard</div>
@@ -201,7 +202,7 @@ ANALYTICS_TEMPLATE = '''
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             
-            // View mode: 'basic', 'recruiter', 'detailed'
+            // View mode: 'basic', 'recruiter', 'detailed', 'detailed_placements'
             const [viewMode, setViewMode] = useState('basic');
             
             // Detailed submissions data
@@ -210,6 +211,11 @@ ANALYTICS_TEMPLATE = '''
             // Quick filters for Detailed view (client-side)
             const [filterOwner, setFilterOwner] = useState('');
             const [filterStatus, setFilterStatus] = useState('');
+            
+            // Detailed placements data and filters
+            const [detailedPlacements, setDetailedPlacements] = useState([]);
+            const [filterPlacementOwner, setFilterPlacementOwner] = useState('');
+            const [filterPlacementStatus, setFilterPlacementStatus] = useState('');
             
             // Analytics data
             const [recruitersData, setRecruitersData] = useState([]);
@@ -320,6 +326,15 @@ ANALYTICS_TEMPLATE = '''
                             const errorText = await res.text();
                             throw new Error('Failed to fetch detailed submissions: ' + errorText.substring(0, 100));
                         }
+                    } else if (viewMode === 'detailed_placements') {
+                        const res = await fetch('/api/placements/detailed?' + q);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setDetailedPlacements(data.data || []);
+                        } else {
+                            const errorText = await res.text();
+                            throw new Error('Failed to fetch detailed placements: ' + errorText.substring(0, 100));
+                        }
                     }
                 } catch (err) {
                     setError(err.message || 'Failed to fetch analytics data');
@@ -423,6 +438,25 @@ ANALYTICS_TEMPLATE = '''
                 return l;
             }, [detailedSubmissions, filterOwner, filterStatus]);
             
+            // Detailed placements: unique owners/statuses and filtered list
+            const detailedPlacementsMeta = useMemo(function(){
+                var owners = [], statuses = [];
+                detailedPlacements.forEach(function(p){
+                    var o = String(p.ownerName != null ? p.ownerName : '').trim();
+                    var t = String(p.status != null ? p.status : '').trim();
+                    if (o && owners.indexOf(o) < 0) owners.push(o);
+                    if (t && statuses.indexOf(t) < 0) statuses.push(t);
+                });
+                owners.sort(); statuses.sort();
+                return { owners: owners, statuses: statuses };
+            }, [detailedPlacements]);
+            const filteredDetailedPlacements = useMemo(function(){
+                var l = detailedPlacements;
+                if (filterPlacementOwner) l = l.filter(function(p){ return String(p.ownerName != null ? p.ownerName : '').toLowerCase().indexOf(filterPlacementOwner.toLowerCase()) >= 0; });
+                if (filterPlacementStatus) l = l.filter(function(p){ return String(p.status != null ? p.status : '') === filterPlacementStatus; });
+                return l;
+            }, [detailedPlacements, filterPlacementOwner, filterPlacementStatus]);
+            
             return (
                 <div className="max-w-7xl mx-auto">
                     <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
@@ -469,6 +503,16 @@ ANALYTICS_TEMPLATE = '''
                                     }`}
                                 >
                                     📋 Detailed Submissions
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('detailed_placements')}
+                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                        viewMode === 'detailed_placements' 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    📋 Detailed Placements
                                 </button>
                             </div>
                         </div>
@@ -779,6 +823,115 @@ ANALYTICS_TEMPLATE = '''
                                     </>
                                 )}
                                 
+                                {viewMode === 'detailed_placements' && (
+                                    <>
+                                        {/* Detailed Placements Table - same structure as Detailed Submissions */}
+                                        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                            <div className="flex items-center justify-between flex-wrap gap-4">
+                                                <div>
+                                                    <h3 className="text-lg font-semibold text-green-800">Detailed Placements</h3>
+                                                    <p className="text-sm text-green-600">Showing all placements with candidate, job, status, and owner details</p>
+                                                </div>
+                                                <div className="text-2xl font-bold text-green-600">{filteredDetailedPlacements.length} records</div>
+                                            </div>
+                                            {/* Quick filters */}
+                                            <div className="mt-3 flex flex-wrap gap-3 items-center">
+                                                <span className="text-sm font-medium text-gray-700">Quick filters:</span>
+                                                <select value={filterPlacementOwner} onChange={(e) => setFilterPlacementOwner(e.target.value)}
+                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    <option value="">All owners</option>
+                                                    {detailedPlacementsMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
+                                                </select>
+                                                <select value={filterPlacementStatus} onChange={(e) => setFilterPlacementStatus(e.target.value)}
+                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    <option value="">All statuses</option>
+                                                    {detailedPlacementsMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+                                                </select>
+                                                {(filterPlacementOwner || filterPlacementStatus) && (
+                                                    <button type="button" onClick={() => { setFilterPlacementOwner(''); setFilterPlacementStatus(''); }}
+                                                        className="text-sm text-indigo-600 hover:underline">Clear filters</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="border-b-2 border-gray-300 bg-gray-50">
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">ID</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Date</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Candidate</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Job Title</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Client</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Status</th>
+                                                            <th className="text-left py-3 px-3 font-semibold text-gray-700">Owner</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredDetailedPlacements.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="7" className="text-center py-12 text-gray-500">
+                                                                    <div className="text-4xl mb-2">📭</div>
+                                                                    {detailedPlacements.length === 0 ? 'No placements found for this period' : 'No rows match the filters'}
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            filteredDetailedPlacements.map((plc, idx) => {
+                                                                const statusColor = {
+                                                                    'Approved': 'bg-green-100 text-green-800',
+                                                                    'Active': 'bg-blue-100 text-blue-800',
+                                                                    'Denied': 'bg-red-100 text-red-800',
+                                                                    'Pending': 'bg-yellow-100 text-yellow-800',
+                                                                    'Terminated': 'bg-gray-100 text-gray-800'
+                                                                }[plc.status] || 'bg-gray-100 text-gray-700';
+                                                                
+                                                                return (
+                                                                    <tr key={plc.id || idx} className="border-b border-gray-100 hover:bg-green-50 transition-colors">
+                                                                        <td className="py-2 px-3 text-gray-600 font-mono text-xs">{plc.id}</td>
+                                                                        <td className="py-2 px-3 text-gray-700 whitespace-nowrap">{plc.dateFormatted || 'N/A'}</td>
+                                                                        <td className="py-2 px-3 text-gray-800 font-medium">{plc.candidateName}</td>
+                                                                        <td className="py-2 px-3 text-gray-700 max-w-xs truncate" title={plc.jobTitle}>{plc.jobTitle}</td>
+                                                                        <td className="py-2 px-3 text-gray-600">{plc.clientName}</td>
+                                                                        <td className="py-2 px-3">
+                                                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                                                                                {plc.status}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-2 px-3 text-gray-700">{plc.ownerName}</td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        
+                                        {detailedPlacements.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
+                                                    filteredDetailedPlacements.forEach(function(p){
+                                                        rows.push([String(p.id || ''), p.dateFormatted || '', p.candidateName || '', p.jobTitle || '', p.clientName || '', p.status || '', p.ownerName || '']);
+                                                    });
+                                                    var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                    var blob = new Blob([csv], { type: 'text/csv' });
+                                                    var url = window.URL.createObjectURL(blob);
+                                                    var a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = 'detailed_placements_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                    a.click();
+                                                    window.URL.revokeObjectURL(url);
+                                                }}
+                                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                            >
+                                                📥 Export Detailed CSV
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                                
                                 {/* Explore API section - show in all views */}
                                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Explore API &amp; available fields</h3>
@@ -787,6 +940,7 @@ ANALYTICS_TEMPLATE = '''
                                         <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
                                         <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
                                         <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Submissions (raw)</a>
+                                        <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Placements (raw)</a>
                                         <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
                                     </div>
                                 </div>
@@ -1531,6 +1685,74 @@ def api_placements():
             'success': True,
             'count': len(placements),
             'data': placements
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/placements/detailed')
+def api_placements_detailed():
+    """Fetch detailed placements. Use start/end (YYYY-MM-DD), or year+month, or year. Same structure as detailed submissions."""
+    tokens = load_tokens()
+    
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    start_ms, end_ms = parse_date_range_from_request()
+    
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        
+        url = f"{rest_url}query/Placement"
+        
+        # Full fields: candidate, job, client, owner (same shape as submissions/detailed)
+        fields = 'id,dateAdded,status,candidate(id,firstName,lastName,email),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
+        
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+        
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        
+        placements = data.get('data', [])
+        
+        formatted = []
+        for plc in placements:
+            candidate = plc.get('candidate', {}) or {}
+            job = plc.get('jobOrder', {}) or {}
+            owner = plc.get('sendingUser', {}) or {}
+            client = job.get('clientCorporation', {}) or {}
+            
+            formatted.append({
+                'id': plc.get('id'),
+                'dateAdded': plc.get('dateAdded'),
+                'dateFormatted': datetime.fromtimestamp(plc.get('dateAdded', 0)/1000).strftime('%Y-%m-%d %H:%M') if plc.get('dateAdded') else None,
+                'status': plc.get('status', 'Unknown'),
+                'candidateId': candidate.get('id'),
+                'candidateName': f"{candidate.get('firstName', '')} {candidate.get('lastName', '')}".strip() or 'Unknown',
+                'candidateEmail': candidate.get('email', ''),
+                'jobId': job.get('id'),
+                'jobTitle': job.get('title', 'Unknown'),
+                'clientName': client.get('name', 'Unknown'),
+                'ownerId': owner.get('id'),
+                'ownerName': f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or 'Unknown'
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(formatted),
+            'data': formatted
         })
     
     except Exception as e:
