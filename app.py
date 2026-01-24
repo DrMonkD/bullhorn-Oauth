@@ -368,7 +368,8 @@ ANALYTICS_TEMPLATE = '''
                 });
                 return Array.from(m.entries()).map(function(kv){ return { id: kv[0], name: kv[1] }; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
             }, [submissions]);
-            // (candidateId,jobId) set for selected owner: only placements matching these count when filtered
+            // (candidateId,jobId) pairs for selected owner: one candidate to multiple jobs = separate entries, each counts as one book.
+            // Only placements whose (candidate, job) was submitted by this owner are included when filtered.
             const ownerCandidateJobSet = useMemo(() => {
                 if (!filterBasicOwner) return null;
                 var s = new Set();
@@ -384,6 +385,7 @@ ANALYTICS_TEMPLATE = '''
                 if (!filterBasicOwner) return submissions;
                 return submissions.filter(function(sub){ return sub.sendingUser && String(sub.sendingUser.id) === String(filterBasicOwner); });
             }, [submissions, filterBasicOwner]);
+            // Placements: include only (candidate, job) pairs that this owner submitted. Candidate+job = one placement/book.
             const filteredPlacements = useMemo(() => {
                 if (!filterBasicOwner || !ownerCandidateJobSet) return placements;
                 return placements.filter(function(pl){
@@ -676,7 +678,7 @@ ANALYTICS_TEMPLATE = '''
                             <>
                                 {viewMode === 'basic' && (
                                     <>
-                                        {/* Basic View - Owner filter (submitter) */}
+                                        {/* Basic View - Owner filter (submitter). Booked/placements use (candidate, job): one candidate to multiple jobs = separate books. */}
                                         <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                             <div className="flex flex-wrap items-center gap-3">
                                                 <span className="text-sm font-medium text-gray-700">Filter by owner (submitter):</span>
@@ -1663,7 +1665,7 @@ def api_submissions():
         if detailed:
             fields = 'id,dateAdded,status,candidate(id,firstName,lastName),jobOrder(id,title,clientCorporation(id,name)),sendingUser(id,firstName,lastName)'
         else:
-            # Basic: sendingUser (owner) + candidate(id), jobOrder(id) for owner filter and placement–submission link
+            # Basic: sendingUser (owner) + candidate(id), jobOrder(id) for owner filter; (candidate,job) links to placement (one candidate to multiple jobs = separate)
             fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName),candidate(id),jobOrder(id)'
         
         params = {
@@ -1735,7 +1737,7 @@ def api_placements():
         
         url = f"{rest_url}query/Placement"
         
-        # id, dateAdded, status, candidate(id), jobOrder(id) for owner filter (link to submission’s submitter)
+        # id, dateAdded, status, candidate(id), jobOrder(id) for owner filter (candidate,job) to submission; one candidate to multiple jobs = separate books
         fields = 'id,dateAdded,status,candidate(id),jobOrder(id)'
         
         params = {
