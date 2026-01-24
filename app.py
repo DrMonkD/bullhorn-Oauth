@@ -348,14 +348,17 @@ ANALYTICS_TEMPLATE = '''
                 else fetchAnalyticsData();
             }, [dateRange.start, dateRange.end, viewMode]);
             
-            // Stats (minimal fields: id, dateAdded only)
+            // Stats (id, dateAdded; placements also have status for Sent to Credentialing)
+            const isSentToCredentialing = (p) => String(p.status || '').toLowerCase().replace(/\\s+/g, ' ').trim() === 'sent to credentialing';
             const stats = useMemo(() => {
                 const totalSubmissions = submissions.length;
                 const totalPlacements = placements.length;
+                const totalSentToCredentialing = placements.filter(isSentToCredentialing).length;
                 const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
                 return {
                     totalSubmissions,
                     totalPlacements,
+                    totalSentToCredentialing,
                     conversionRate: parseFloat(conversionRate)
                 };
             }, [submissions, placements]);
@@ -376,15 +379,16 @@ ANALYTICS_TEMPLATE = '''
                     if (!sub.dateAdded) return;
                     const week = getWeekNumber(sub.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, sentToCredentialing: 0 });
                     weekMap.get(key).submissions++;
                 });
                 placements.forEach(place => {
                     if (!place.dateAdded) return;
                     const week = getWeekNumber(place.dateAdded);
                     const key = `Week ${week}`;
-                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0 });
+                    if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0, sentToCredentialing: 0 });
                     weekMap.get(key).placements++;
+                    if (isSentToCredentialing(place)) weekMap.get(key).sentToCredentialing++;
                 });
                 return Array.from(weekMap.values()).sort((a, b) => {
                     const weekA = parseInt(a.name.replace('Week ', ''), 10);
@@ -395,8 +399,8 @@ ANALYTICS_TEMPLATE = '''
             
             // Export CSV (by-week data)
             const exportCSV = () => {
-                const rows = [['Week', 'Submissions', 'Placements']];
-                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements)]));
+                const rows = [['Week', 'Submissions', 'Placements', 'Sent to Credentialing']];
+                chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.sentToCredentialing || 0)]));
                 const csv = rows.map(row => row.join(',')).join('\\n');
                 const blob = new Blob([csv], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
@@ -596,8 +600,8 @@ ANALYTICS_TEMPLATE = '''
                             {viewMode === 'basic' && (
                                 <button
                                     onClick={() => {
-                                        const rows = [['Week', 'Submissions', 'Placements']];
-                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements)]));
+                                        const rows = [['Week', 'Submissions', 'Placements', 'Sent to Credentialing']];
+                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.sentToCredentialing || 0)]));
                                         const csv = rows.map(row => row.join(',')).join('\\n');
                                         const blob = new Blob([csv], { type: 'text/csv' });
                                         const url = window.URL.createObjectURL(blob);
@@ -630,7 +634,7 @@ ANALYTICS_TEMPLATE = '''
                                 {viewMode === 'basic' && (
                                     <>
                                         {/* Basic View - Existing */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                                 <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
                                                 <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
@@ -638,6 +642,10 @@ ANALYTICS_TEMPLATE = '''
                                             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                                                 <div className="text-sm text-gray-600 mb-1">Total Placements</div>
                                                 <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
+                                            </div>
+                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                                <div className="text-sm text-gray-600 mb-1">Sent to Credentialing</div>
+                                                <div className="text-3xl font-bold text-amber-600">{stats.totalSentToCredentialing}</div>
                                             </div>
                                             <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                                                 <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
@@ -653,9 +661,10 @@ ANALYTICS_TEMPLATE = '''
                                                 labelsKey="name"
                                                 datasets={[
                                                     { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
-                                                    { dataKey: 'placements', label: 'Placements', color: 'rgba(16,185,129,0.8)' }
+                                                    { dataKey: 'placements', label: 'Placements', color: 'rgba(16,185,129,0.8)' },
+                                                    { dataKey: 'sentToCredentialing', label: 'Sent to Credentialing', color: 'rgba(245,158,11,0.8)' }
                                                 ]}
-                                                title="Submissions vs Placements by Week"
+                                                title="Submissions, Placements & Sent to Credentialing by Week"
                                                 height={300}
                                             />
                                         </div>
@@ -1664,8 +1673,8 @@ def api_placements():
         
         url = f"{rest_url}query/Placement"
         
-        # Minimal fields only - no nested associations to avoid 400 Bad Request
-        fields = 'id,dateAdded'
+        # id, dateAdded, status (status needed for Sent to Credentialing in Basic chart)
+        fields = 'id,dateAdded,status'
         
         params = {
             'BhRestToken': tokens['bh_rest_token'],
