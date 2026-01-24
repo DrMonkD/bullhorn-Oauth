@@ -201,30 +201,68 @@ ANALYTICS_TEMPLATE = '''
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             
-            // View mode: 'basic', 'weekly', 'monthly', 'recruiter', 'detailed'
+            // View mode: 'basic', 'recruiter', 'detailed'
             const [viewMode, setViewMode] = useState('basic');
             
             // Detailed submissions data
             const [detailedSubmissions, setDetailedSubmissions] = useState([]);
             
+            // Quick filters for Detailed view (client-side)
+            const [filterOwner, setFilterOwner] = useState('');
+            const [filterStatus, setFilterStatus] = useState('');
+            
             // Analytics data
-            const [weeklyData, setWeeklyData] = useState([]);
-            const [monthlyData, setMonthlyData] = useState(null);
             const [recruitersData, setRecruitersData] = useState([]);
             
-            // Filters
+            // Date/period: 'week'|'month'|'year'|'custom'
+            const [periodType, setPeriodType] = useState('month');
             const [year, setYear] = useState(new Date().getFullYear());
             const [month, setMonth] = useState(new Date().getMonth() + 1);
+            const [weekDate, setWeekDate] = useState(function(){
+                var d = new Date();
+                return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            });
+            const [startDate, setStartDate] = useState(function(){
+                var d = new Date();
+                return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01';
+            });
+            const [endDate, setEndDate] = useState(function(){
+                var d = new Date();
+                var last = new Date(d.getFullYear(), d.getMonth()+1, 0);
+                return last.getFullYear() + '-' + String(last.getMonth()+1).padStart(2,'0') + '-' + String(last.getDate()).padStart(2,'0');
+            });
+            
+            // Compute start/end (YYYY-MM-DD) from period
+            const dateRange = useMemo(function(){
+                function ym(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+                if (periodType === 'week' && weekDate) {
+                    var d = new Date(weekDate + 'T12:00:00');
+                    var day = d.getDay();
+                    var monOff = day === 0 ? -6 : 1 - day;
+                    var mon = new Date(d); mon.setDate(mon.getDate() + monOff);
+                    var sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+                    return { start: ym(mon), end: ym(sun) };
+                }
+                if (periodType === 'month') {
+                    var last = new Date(year, month, 0);
+                    return { start: year+'-'+String(month).padStart(2,'0')+'-01', end: year+'-'+String(month).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0') };
+                }
+                if (periodType === 'year') {
+                    return { start: year+'-01-01', end: year+'-12-31' };
+                }
+                return { start: startDate || '2020-01-01', end: endDate || '2030-12-31' };
+            }, [periodType, year, month, weekDate, startDate, endDate]);
             
             // Fetch basic data (existing)
             const fetchBasicData = async () => {
                 setLoading(true);
                 setError(null);
                 try {
-                    console.log(`Fetching data for ${year}-${month}...`);
+                    var r = dateRange;
+                    console.log('Fetching data for', r.start, 'to', r.end);
                     const [subsRes, placeRes] = await Promise.all([
-                        fetch(`/api/submissions?year=${year}&month=${month}`),
-                        fetch(`/api/placements?year=${year}&month=${month}`)
+                        fetch('/api/submissions?start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end)),
+                        fetch('/api/placements?start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end))
                     ]);
                     
                     console.log('Submissions response:', subsRes.status, subsRes.ok);
@@ -262,25 +300,11 @@ ANALYTICS_TEMPLATE = '''
             const fetchAnalyticsData = async () => {
                 setLoading(true);
                 setError(null);
+                var r = dateRange;
+                var q = 'start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end);
                 try {
-                    if (viewMode === 'weekly') {
-                        const res = await fetch(`/api/analytics/weekly?year=${year}&month=${month}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            setWeeklyData(Array.isArray(data) ? data : []);
-                        } else {
-                            throw new Error('Failed to fetch weekly data');
-                        }
-                    } else if (viewMode === 'monthly') {
-                        const res = await fetch(`/api/analytics/monthly?year=${year}&month=${month}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            setMonthlyData(data);
-                        } else {
-                            throw new Error('Failed to fetch monthly data');
-                        }
-                    } else if (viewMode === 'recruiter') {
-                        const res = await fetch(`/api/analytics/recruiters?year=${year}&month=${month}`);
+                    if (viewMode === 'recruiter') {
+                        const res = await fetch('/api/analytics/recruiters?' + q);
                         if (res.ok) {
                             const data = await res.json();
                             setRecruitersData(data.recruiters || []);
@@ -288,13 +312,13 @@ ANALYTICS_TEMPLATE = '''
                             throw new Error('Failed to fetch recruiter data');
                         }
                     } else if (viewMode === 'detailed') {
-                        const res = await fetch(`/api/submissions/detailed?year=${year}&month=${month}`);
+                        const res = await fetch('/api/submissions/detailed?' + q);
                         if (res.ok) {
                             const data = await res.json();
                             setDetailedSubmissions(data.data || []);
                         } else {
                             const errorText = await res.text();
-                            throw new Error(`Failed to fetch detailed submissions: ${errorText.substring(0, 100)}`);
+                            throw new Error('Failed to fetch detailed submissions: ' + errorText.substring(0, 100));
                         }
                     }
                 } catch (err) {
@@ -304,13 +328,10 @@ ANALYTICS_TEMPLATE = '''
                 }
             };
             
-            useEffect(() => {
-                if (viewMode === 'basic') {
-                    fetchBasicData();
-                } else {
-                    fetchAnalyticsData();
-                }
-            }, [year, month, viewMode]);
+            useEffect(function(){
+                if (viewMode === 'basic') fetchBasicData();
+                else fetchAnalyticsData();
+            }, [dateRange.start, dateRange.end, viewMode]);
             
             // Stats (minimal fields: id, dateAdded only)
             const stats = useMemo(() => {
@@ -366,7 +387,7 @@ ANALYTICS_TEMPLATE = '''
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `analytics_${year}_${month}.csv`;
+                a.download = 'analytics_' + dateRange.start + '_' + dateRange.end + '.csv';
                 a.click();
                 window.URL.revokeObjectURL(url);
             };
@@ -376,6 +397,23 @@ ANALYTICS_TEMPLATE = '''
                 if (rate >= 10) return 'text-yellow-600 font-semibold';
                 return 'text-red-600 font-semibold';
             };
+            
+            // Detailed: unique owners/statuses and filtered list
+            const detailedMeta = useMemo(function(){
+                var owners = [], statuses = [];
+                detailedSubmissions.forEach(function(s){
+                    var o = (s.ownerName || '').trim(); if (o && owners.indexOf(o) < 0) owners.push(o);
+                    var t = (s.status || '').trim(); if (t && statuses.indexOf(t) < 0) statuses.push(t);
+                });
+                owners.sort(); statuses.sort();
+                return { owners: owners, statuses: statuses };
+            }, [detailedSubmissions]);
+            const filteredDetailed = useMemo(function(){
+                var l = detailedSubmissions;
+                if (filterOwner) l = l.filter(function(s){ return (s.ownerName || '').toLowerCase().indexOf(filterOwner.toLowerCase()) >= 0; });
+                if (filterStatus) l = l.filter(function(s){ return (s.status || '') === filterStatus; });
+                return l;
+            }, [detailedSubmissions, filterOwner, filterStatus]);
             
             return (
                 <div className="max-w-7xl mx-auto">
@@ -405,26 +443,6 @@ ANALYTICS_TEMPLATE = '''
                                     Basic
                                 </button>
                                 <button
-                                    onClick={() => setViewMode('weekly')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'weekly' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Weekly
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('monthly')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'monthly' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Monthly
-                                </button>
-                                <button
                                     onClick={() => setViewMode('recruiter')}
                                     className={`px-4 py-2 rounded-lg transition-colors ${
                                         viewMode === 'recruiter' 
@@ -447,32 +465,69 @@ ANALYTICS_TEMPLATE = '''
                             </div>
                         </div>
                         
-                        {/* Filters */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                        {/* Date / Period */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Period</label>
                                 <select
-                                    value={year}
-                                    onChange={(e) => setYear(parseInt(e.target.value))}
+                                    value={periodType}
+                                    onChange={(e) => setPeriodType(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                                 >
-                                    {[2024, 2025, 2026, 2027].map(y => (
-                                        <option key={y} value={y}>{y}</option>
-                                    ))}
+                                    <option value="week">Week</option>
+                                    <option value="month">Month</option>
+                                    <option value="year">Year</option>
+                                    <option value="custom">Custom range</option>
                                 </select>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                                <select
-                                    value={month}
-                                    onChange={(e) => setMonth(parseInt(e.target.value))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                >
-                                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                        <option key={m} value={m}>{new Date(2024, m - 1).toLocaleString('default', { month: 'long' })}</option>
-                                    ))}
-                                </select>
-                            </div>
+                            {periodType === 'week' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Date in week</label>
+                                    <input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                </div>
+                            )}
+                            {periodType === 'month' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                        <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            {[2024, 2025, 2026, 2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                                        <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                            {Array.from({ length: 12 }, function(_, i){ var m = i + 1; return <option key={m} value={m}>{new Date(2024, m - 1).toLocaleString('default', { month: 'long' })}</option>; })}
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                            {periodType === 'year' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                                    <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                        {[2024, 2025, 2026, 2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}
+                                    </select>
+                                </div>
+                            )}
+                            {periodType === 'custom' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                    </div>
+                                </>
+                            )}
                         </div>
                         
                         {/* Action Buttons */}
@@ -496,7 +551,7 @@ ANALYTICS_TEMPLATE = '''
                                         const url = window.URL.createObjectURL(blob);
                                         const a = document.createElement('a');
                                         a.href = url;
-                                        a.download = `analytics_${year}_${month}.csv`;
+                                        a.download = 'analytics_' + dateRange.start + '_' + dateRange.end + '.csv';
                                         a.click();
                                         window.URL.revokeObjectURL(url);
                                     }}
@@ -555,111 +610,6 @@ ANALYTICS_TEMPLATE = '''
                                     </>
                                 )}
                                 
-                                {viewMode === 'weekly' && (
-                                    <>
-                                        {/* Weekly View */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                            {weeklyData.length > 0 && (() => {
-                                                const totals = weeklyData.reduce((acc, week) => ({
-                                                    submissions: acc.submissions + week.submissions,
-                                                    presented: acc.presented + week.presented,
-                                                    placed: acc.placed + week.placed
-                                                }), { submissions: 0, presented: 0, placed: 0 });
-                                                return (
-                                                    <>
-                                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                            <div className="text-3xl font-bold text-blue-600">{totals.submissions}</div>
-                                                        </div>
-                                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Presented</div>
-                                                            <div className="text-3xl font-bold text-yellow-600">{totals.presented}</div>
-                                                        </div>
-                                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Placed</div>
-                                                            <div className="text-3xl font-bold text-green-600">{totals.placed}</div>
-                                                        </div>
-                                                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                                            <div className={`text-3xl font-bold ${getConversionColor(totals.submissions > 0 ? (totals.placed / totals.submissions * 100) : 0)}`}>
-                                                                {totals.submissions > 0 ? ((totals.placed / totals.submissions * 100).toFixed(1)) : 0}%
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                        
-                                        {weeklyData.length > 0 && (
-                                            <div className="mb-6">
-                                                <BarChartCanvas
-                                                    data={weeklyData.map(function(w) {
-                                                        var p = (w.weekStart || '').split('-');
-                                                        return { name: (p[1] || '') + '/' + (p[2] || ''), submissions: w.submissions, presented: w.presented, placed: w.placed };
-                                                    })}
-                                                    labelsKey="name"
-                                                    datasets={[
-                                                        { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
-                                                        { dataKey: 'presented', label: 'Presented', color: 'rgba(245,158,11,0.8)' },
-                                                        { dataKey: 'placed', label: 'Placed', color: 'rgba(16,185,129,0.8)' }
-                                                    ]}
-                                                    title="Weekly Analytics"
-                                                    height={350}
-                                                />
-                                            </div>
-                                        )}
-                                        
-                                        {weeklyData.length === 0 && !loading && (
-                                            <div className="text-center py-8 text-gray-500">No weekly data available</div>
-                                        )}
-                                    </>
-                                )}
-                                
-                                {viewMode === 'monthly' && monthlyData && (
-                                    <>
-                                        {/* Monthly View */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                <div className="text-3xl font-bold text-blue-600">{monthlyData.submissions}</div>
-                                            </div>
-                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Presented</div>
-                                                <div className="text-3xl font-bold text-yellow-600">{monthlyData.presented}</div>
-                                            </div>
-                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Placed</div>
-                                                <div className="text-3xl font-bold text-green-600">{monthlyData.placed}</div>
-                                            </div>
-                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                                <div className={`text-3xl font-bold ${getConversionColor(monthlyData.submissions > 0 ? (monthlyData.placed / monthlyData.submissions * 100) : 0)}`}>
-                                                    {monthlyData.submissions > 0 ? ((monthlyData.placed / monthlyData.submissions * 100).toFixed(1)) : 0}%
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        {monthlyData.byRecruiter && monthlyData.byRecruiter.length > 0 && (
-                                            <div className="mb-6">
-                                                <BarChartCanvas
-                                                    data={monthlyData.byRecruiter.map(function(r) {
-                                                        var n = r.name || '';
-                                                        return { name: n.length > 15 ? n.substring(0, 15) + '...' : n, submissions: r.submissions, presented: r.presented, placed: r.placed };
-                                                    })}
-                                                    labelsKey="name"
-                                                    datasets={[
-                                                        { dataKey: 'submissions', label: 'Submissions', color: 'rgba(59,130,246,0.8)' },
-                                                        { dataKey: 'presented', label: 'Presented', color: 'rgba(245,158,11,0.8)' },
-                                                        { dataKey: 'placed', label: 'Placed', color: 'rgba(16,185,129,0.8)' }
-                                                    ]}
-                                                    title="Monthly Analytics by Recruiter"
-                                                    height={350}
-                                                />
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                                
                                 {viewMode === 'recruiter' && (
                                     <>
                                         {/* Recruiter Leaderboard */}
@@ -712,12 +662,30 @@ ANALYTICS_TEMPLATE = '''
                                     <>
                                         {/* Detailed Submissions Table */}
                                         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex items-center justify-between flex-wrap gap-4">
                                                 <div>
                                                     <h3 className="text-lg font-semibold text-blue-800">Detailed Submissions</h3>
                                                     <p className="text-sm text-blue-600">Showing all submissions with candidate, job, status, and owner details</p>
                                                 </div>
-                                                <div className="text-2xl font-bold text-blue-600">{detailedSubmissions.length} records</div>
+                                                <div className="text-2xl font-bold text-blue-600">{filteredDetailed.length} records</div>
+                                            </div>
+                                            {/* Quick filters */}
+                                            <div className="mt-3 flex flex-wrap gap-3 items-center">
+                                                <span className="text-sm font-medium text-gray-700">Quick filters:</span>
+                                                <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}
+                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    <option value="">All owners</option>
+                                                    {detailedMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
+                                                </select>
+                                                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+                                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                                    <option value="">All statuses</option>
+                                                    {detailedMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+                                                </select>
+                                                {(filterOwner || filterStatus) && (
+                                                    <button type="button" onClick={() => { setFilterOwner(''); setFilterStatus(''); }}
+                                                        className="text-sm text-indigo-600 hover:underline">Clear filters</button>
+                                                )}
                                             </div>
                                         </div>
                                         
@@ -736,15 +704,15 @@ ANALYTICS_TEMPLATE = '''
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {detailedSubmissions.length === 0 ? (
+                                                        {filteredDetailed.length === 0 ? (
                                                             <tr>
                                                                 <td colSpan="7" className="text-center py-12 text-gray-500">
                                                                     <div className="text-4xl mb-2">📭</div>
-                                                                    No submissions found for this period
+                                                                    {detailedSubmissions.length === 0 ? 'No submissions found for this period' : 'No rows match the filters'}
                                                                 </td>
                                                             </tr>
                                                         ) : (
-                                                            detailedSubmissions.map((sub, idx) => {
+                                                            filteredDetailed.map((sub, idx) => {
                                                                 const statusColor = {
                                                                     'Submitted': 'bg-blue-100 text-blue-800',
                                                                     'Presented': 'bg-yellow-100 text-yellow-800',
@@ -778,26 +746,20 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         
-                                        {/* Export CSV for detailed */}
+                                        {/* Export CSV for detailed (exports filtered rows) */}
                                         {detailedSubmissions.length > 0 && (
                                             <button
                                                 onClick={() => {
-                                                    const rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
-                                                    detailedSubmissions.forEach(s => rows.push([
-                                                        String(s.id || ''),
-                                                        s.dateFormatted || '',
-                                                        s.candidateName || '',
-                                                        s.jobTitle || '',
-                                                        s.clientName || '',
-                                                        s.status || '',
-                                                        s.ownerName || ''
-                                                    ]));
-                                                    const csv = rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(',')).join('\\n');
-                                                    const blob = new Blob([csv], { type: 'text/csv' });
-                                                    const url = window.URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
+                                                    var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
+                                                    filteredDetailed.forEach(function(s){
+                                                        rows.push([String(s.id || ''), s.dateFormatted || '', s.candidateName || '', s.jobTitle || '', s.clientName || '', s.status || '', s.ownerName || '']);
+                                                    });
+                                                    var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                    var blob = new Blob([csv], { type: 'text/csv' });
+                                                    var url = window.URL.createObjectURL(blob);
+                                                    var a = document.createElement('a');
                                                     a.href = url;
-                                                    a.download = `detailed_submissions_${year}_${month}.csv`;
+                                                    a.download = 'detailed_submissions_' + dateRange.start + '_' + dateRange.end + '.csv';
                                                     a.click();
                                                     window.URL.revokeObjectURL(url);
                                                 }}
@@ -816,10 +778,8 @@ ANALYTICS_TEMPLATE = '''
                                     <div className="flex flex-wrap gap-2">
                                         <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
                                         <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
-                                        <a href={`/api/submissions/detailed?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Submissions (raw)</a>
-                                        <a href={`/api/analytics/weekly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Weekly (raw)</a>
-                                        <a href={`/api/analytics/monthly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Monthly (raw)</a>
-                                        <a href={`/api/analytics/recruiters?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
+                                        <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-green-200 text-green-800 rounded-lg text-sm hover:bg-green-300">Detailed Submissions (raw)</a>
+                                        <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
                                     </div>
                                 </div>
                             </>
@@ -978,39 +938,10 @@ def home():
         refresh_interval=REFRESH_INTERVAL_MINUTES
     )
 
-# #region agent log
-_DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.cursor', 'debug.log')
-def _log(m):
-    try:
-        with open(_DEBUG_LOG, 'a', encoding='utf-8') as f:
-            f.write(json.dumps({**m, 'timestamp': int(datetime.now().timestamp()*1000), 'sessionId': 'debug-session'}) + '\n')
-    except Exception:
-        pass
-# #endregion
-
 @app.route('/analytics')
 def analytics():
     """Analytics dashboard page"""
-    # #region agent log
-    try:
-        i = ANALYTICS_TEMPLATE.find('style=')
-        raw = ANALYTICS_TEMPLATE[max(0,i-60):i+140] if i >= 0 else ''
-        _log({'location':'analytics:before_render','message':'raw template style region','data':{'snippet':raw,'idx':i},'hypothesisId':'D'})
-    except Exception as e:
-        _log({'location':'analytics:raw_err','message':'extract raw failed','data':{'err':str(e)},'hypothesisId':'D'})
-    try:
-        html = render_template_string(ANALYTICS_TEMPLATE)
-        j = html.find('style=')
-        sni = html[max(0,j-50):j+130] if j >= 0 else ''
-        _log({'location':'analytics:after_render','message':'rendered style region','data':{'snippet':sni,'idx':j,'html_len':len(html)},'hypothesisId':'A'})
-        # Inject DEBUG comment for View Source (avoid --> in snippet)
-        dbg = '<!-- DEBUG style_snippet: ' + sni.replace('-->', '[END]') + ' -->'
-        html = html.replace('</body>', dbg + '\n</body>', 1)
-        return html
-    except Exception as e:
-        _log({'location':'analytics:render_err','message':'render_template_string failed','data':{'err':str(e),'type':type(e).__name__},'hypothesisId':'C'})
-        raise
-    # #endregion
+    return render_template_string(ANALYTICS_TEMPLATE)
 
 @app.route('/login')
 def login():
@@ -1178,6 +1109,26 @@ def logout():
             message=f"Error clearing tokens: {str(e)}")
 
 # ==================== HELPER FUNCTIONS FOR ANALYTICS ====================
+
+def parse_date_range_from_request():
+    """Get (start_ms, end_ms) from request: start/end (YYYY-MM-DD), or year+month, or year only."""
+    import calendar
+    args = request.args
+    start_arg, end_arg = args.get('start'), args.get('end')
+    if start_arg and end_arg:
+        start_dt = datetime.strptime(start_arg, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_arg, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        return int(start_dt.timestamp() * 1000), int(end_dt.timestamp() * 1000)
+    year = int(args.get('year', datetime.now().year))
+    month = args.get('month', type=int)
+    if month is None:
+        start_dt = datetime(year, 1, 1)
+        end_dt = datetime(year, 12, 31, 23, 59, 59)
+    else:
+        start_dt = datetime(year, month, 1)
+        last = calendar.monthrange(year, month)[1]
+        end_dt = datetime(year, month, last, 23, 59, 59)
+    return int(start_dt.timestamp() * 1000), int(end_dt.timestamp() * 1000)
 
 def fetch_job_submissions(start_ms, end_ms, include_recruiter=True):
     """
@@ -1369,30 +1320,14 @@ def api_refresh():
 
 @app.route('/api/submissions')
 def api_submissions():
-    """Fetch submissions from Bullhorn with full details"""
+    """Fetch submissions from Bullhorn. Use start/end (YYYY-MM-DD), or year+month, or year."""
     tokens = load_tokens()
     
     if not tokens or not tokens.get('bh_rest_token'):
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Get parameters
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', 1, type=int)
     detailed = request.args.get('detailed', 'false').lower() == 'true'
-    
-    # Calculate date range
-    start_date = f"{year}-{month:02d}-01"
-    
-    # Get last day of month
-    import calendar
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = f"{year}-{month:02d}-{last_day}"
-    
-    # Convert to milliseconds
-    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-    start_ms = int(start_dt.timestamp() * 1000)
-    end_ms = int(end_dt.timestamp() * 1000)
+    start_ms, end_ms = parse_date_range_from_request()
     
     # Query Bullhorn
     try:
@@ -1449,8 +1384,6 @@ def api_submissions():
         return jsonify({
             'success': True,
             'count': len(submissions),
-            'year': year,
-            'month': month,
             'detailed': detailed,
             'data': submissions
         })
@@ -1463,28 +1396,13 @@ def api_submissions():
 
 @app.route('/api/placements')
 def api_placements():
-    """Fetch placements from Bullhorn"""
+    """Fetch placements from Bullhorn. Use start/end (YYYY-MM-DD), or year+month, or year."""
     tokens = load_tokens()
     
     if not tokens or not tokens.get('bh_rest_token'):
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Get parameters
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', 1, type=int)
-    
-    # Calculate date range
-    start_date = f"{year}-{month:02d}-01"
-    
-    import calendar
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = f"{year}-{month:02d}-{last_day}"
-    
-    # Convert to milliseconds
-    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-    start_ms = int(start_dt.timestamp() * 1000)
-    end_ms = int(end_dt.timestamp() * 1000)
+    start_ms, end_ms = parse_date_range_from_request()
     
     # Query Bullhorn
     try:
@@ -1514,8 +1432,6 @@ def api_placements():
         return jsonify({
             'success': True,
             'count': len(placements),
-            'year': year,
-            'month': month,
             'data': placements
         })
     
@@ -1776,23 +1692,13 @@ def api_analytics_monthly():
 
 @app.route('/api/submissions/detailed')
 def api_submissions_detailed():
-    """Fetch detailed submissions with all fields - candidate, job, status, owner"""
+    """Fetch detailed submissions. Use start/end (YYYY-MM-DD), or year+month, or year."""
     tokens = load_tokens()
     
     if not tokens or not tokens.get('bh_rest_token'):
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Get parameters
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', 1, type=int)
-    
-    # Calculate date range
-    import calendar
-    start_date = datetime(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    start_ms = int(start_date.timestamp() * 1000)
-    end_ms = int(end_date.timestamp() * 1000)
+    start_ms, end_ms = parse_date_range_from_request()
     
     # Query Bullhorn
     try:
@@ -1845,8 +1751,6 @@ def api_submissions_detailed():
         return jsonify({
             'success': True,
             'count': len(formatted),
-            'year': year,
-            'month': month,
             'data': formatted
         })
     
@@ -1858,21 +1762,12 @@ def api_submissions_detailed():
 
 @app.route('/api/analytics/recruiters')
 def api_analytics_recruiters():
-    """Get recruiter-level analytics for the month"""
+    """Get recruiter-level analytics. Use start/end (YYYY-MM-DD), or year+month, or year."""
     tokens = load_tokens()
     if not tokens or not tokens.get('bh_rest_token'):
         return jsonify({'error': 'Not authenticated'}), 401
     
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', datetime.now().month, type=int)
-    
-    # Calculate month date range
-    import calendar
-    start_date = datetime(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    start_ms = int(start_date.timestamp() * 1000)
-    end_ms = int(end_date.timestamp() * 1000)
+    start_ms, end_ms = parse_date_range_from_request()
     
     try:
         submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
@@ -1924,11 +1819,7 @@ def api_analytics_recruiters():
         result = list(recruiter_map.values())
         result.sort(key=lambda x: x['totalSubmissions'], reverse=True)
         
-        return jsonify({
-            'year': year,
-            'month': month,
-            'recruiters': result
-        })
+        return jsonify({'recruiters': result})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
