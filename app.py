@@ -2,1722 +2,708 @@ from flask import Flask, request, redirect, render_template_string, jsonify
 import requests
 import json
 import os
+import logging
+import threading
+import calendar
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-import atexit
+from apscheduler.triggers.interval import IntervalTrigger
 
 app = Flask(__name__)
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Configuration
-CLIENT_ID = os.environ.get('BULLHORN_CLIENT_ID', '')
-CLIENT_SECRET = os.environ.get('BULLHORN_CLIENT_SECRET', '')
-REDIRECT_URI = 'https://bullhorn-oauth.onrender.com/oauth/callback'
+CLIENT_ID = os.environ.get('BULLHORN_CLIENT_ID', 'b0c7f986-5620-490d-8364-2e943b3bbd2d')
+CLIENT_SECRET = os.environ.get('BULLHORN_CLIENT_SECRET', 'j0I9c85nkGSPt6CTOaYnDAtw')
+# Use localhost for local testing
+REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/oauth/callback')
 TOKEN_FILE = 'token_store.json'
+JOBS_FILE = 'jobs_store.json'
 
-# Auto-refresh configuration
-REFRESH_INTERVAL_MINUTES = 5  # Refresh every 5 minutes
-scheduler = BackgroundScheduler()
+# Scheduler configuration
+JOB_SYNC_INTERVAL = int(os.environ.get('JOB_SYNC_INTERVAL', 15))  # minutes
+TOKEN_REFRESH_CHECK_INTERVAL = int(os.environ.get('TOKEN_REFRESH_CHECK_INTERVAL', 10))  # minutes
+
+# Initialize scheduler
+scheduler = BackgroundScheduler(daemon=True)
 scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
+logger.info("Background scheduler started")
 
-# HTML Template (same as before)
+# HTML Template
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-   <meta charset="UTF-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>Bullhorn OAuth - Production</title>
-   <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bullhorn OAuth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
-   <div class="max-w-4xl mx-auto">
-       <div class="bg-white rounded-lg shadow-xl p-8">
-           <div class="flex items-center gap-3 mb-6">
-               <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
-               </svg>
-               <h1 class="text-3xl font-bold text-gray-800">Bullhorn OAuth (Production)</h1>
-           </div>
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-lg shadow-xl p-8">
+            <div class="flex items-center gap-3 mb-6">
+                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                </svg>
+                <h1 class="text-3xl font-bold text-gray-800">Bullhorn OAuth</h1>
+            </div>
 
-           {% if message %}
-           <div class="mb-4 p-4 {% if error %}bg-red-50 border-red-200{% else %}bg-green-50 border-green-200{% endif %} border rounded-lg">
-               <p class="{% if error %}text-red-800{% else %}text-green-800{% endif %}">{{ message }}</p>
-           </div>
-           {% endif %}
+            {% if message %}
+            <div class="mb-4 p-4 {% if error %}bg-red-50 border-red-200{% else %}bg-green-50 border-green-200{% endif %} border rounded-lg">
+                <p class="{% if error %}text-red-800{% else %}text-green-800{% endif %}">{{ message }}</p>
+            </div>
+            {% endif %}
 
-           {% if tokens %}
-           <div class="mb-6 p-6 bg-green-50 border border-green-200 rounded-lg">
-               <h3 class="text-lg font-semibold text-green-800 mb-3">✅ Active Session</h3>
-               <div class="space-y-3 text-sm">
-                   <div>
-                       <span class="font-medium text-gray-700">Status:</span>
-                       <p class="text-green-600 font-semibold">{{ session_status }}</p>
-                   </div>
-                   <div>
-                       <span class="font-medium text-gray-700">Last Refresh:</span>
-                       <p class="text-gray-600">{{ tokens.last_refresh if tokens.last_refresh else 'Never' }}</p>
-                   </div>
-                   <div>
-                       <span class="font-medium text-gray-700">REST URL:</span>
-                       <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.rest_url }}</p>
-                   </div>
-                   <div>
-                       <span class="font-medium text-gray-700">Auto-Refresh:</span>
-                       <p class="text-gray-600">Enabled (every {{ refresh_interval }} minutes)</p>
-                   </div>
-               </div>
-           </div>
+            {% if tokens %}
+            <div class="mb-6 p-6 bg-green-50 border border-green-200 rounded-lg">
+                <h3 class="text-lg font-semibold text-green-800 mb-3">✅ OAuth Success</h3>
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <span class="font-medium text-gray-700">Access Token:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.access_token }}</p>
+                    </div>
+                    {% if tokens.refresh_token %}
+                    <div>
+                        <span class="font-medium text-gray-700">Refresh Token:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.refresh_token }}</p>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <span class="font-medium text-gray-700">REST URL:</span>
+                        <p class="text-gray-600 break-all font-mono text-xs mt-1">{{ tokens.rest_url if tokens.rest_url else 'Not available - please re-authenticate' }}</p>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Saved:</span>
+                        <p class="text-gray-600 text-xs mt-1">{{ tokens.saved_at }}</p>
+                    </div>
+                </div>
+            </div>
 
-           <div class="flex gap-3 mb-6 flex-wrap">
-               <a href="/analytics" class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2">
-                   <span>📊</span>
-                   Analytics Dashboard
-               </a>
-               <a href="/test" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                   Test Connection
-               </a>
-               <a href="/api/submissions?year=2026&month=1" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors" target="_blank">
-                   Test API (Jan 2026)
-               </a>
-               <a href="/logout" class="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                   Clear Tokens
-               </a>
-           </div>
-           {% else %}
-           <div class="mb-6">
-               <p class="text-gray-700 mb-4">Click the button below to authenticate with Bullhorn.</p>
-               <a href="/login" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                   </svg>
-                   Start OAuth Flow
-               </a>
-           </div>
-           {% endif %}
+            <div class="flex gap-3 mb-6">
+                <a href="/test" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Test Connection
+                </a>
+                <a href="/logout" class="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                    Clear Tokens
+                </a>
+            </div>
+            {% else %}
+            <div class="mb-6">
+                <p class="text-gray-700 mb-4">Click the button below to authenticate with Bullhorn.</p>
+                <a href="/login" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                    Start OAuth Flow
+                </a>
+            </div>
+            {% endif %}
 
-           <div class="mt-8 p-6 bg-gray-50 rounded-lg">
-               <h3 class="text-lg font-semibold text-gray-800 mb-3">API Endpoints</h3>
-               <div class="space-y-2 text-sm text-gray-700 font-mono">
-                   <div class="bg-white p-2 rounded">GET /api/tokens - Get current tokens</div>
-                   <div class="bg-white p-2 rounded">GET /api/submissions?year=YYYY&month=M - Fetch submissions (minimal fields)</div>
-                   <div class="bg-white p-2 rounded">GET /api/placements?year=YYYY&month=M - Fetch placements (minimal fields)</div>
-                    <div class="bg-white p-2 rounded">GET /api/analytics/weekly?year=YYYY&month=M - Weekly analytics with recruiter breakdown</div>
-                    <div class="bg-white p-2 rounded">GET /api/analytics/monthly?year=YYYY&month=M - Monthly analytics with recruiter breakdown</div>
-                    <div class="bg-white p-2 rounded">GET /api/analytics/recruiters?year=YYYY&month=M - Recruiter leaderboard</div>
-                   <div class="bg-white p-2 rounded">GET /api/meta/JobSubmission - All queryable JobSubmission fields</div>
-                   <div class="bg-white p-2 rounded">GET /api/meta/Placement - All queryable Placement fields</div>
-                   <div class="bg-white p-2 rounded">POST /api/refresh - Manually refresh tokens</div>
-                   <div class="bg-white p-2 rounded">GET /api/status - Check session status</div>
-               </div>
-           </div>
-
-           <div class="mt-6 p-6 bg-blue-50 rounded-lg">
-               <h3 class="text-lg font-semibold text-gray-800 mb-3">Production Features</h3>
-               <ul class="list-disc list-inside space-y-2 text-gray-700">
-                   <li>✅ Auto-refresh tokens every 5 minutes</li>
-                   <li>✅ Automatic BhRestToken exchange on callback</li>
-                   <li>✅ RESTful API endpoints for data fetching</li>
-                   <li>✅ Session persistence across restarts</li>
-                   <li>✅ No manual "Test Connection" needed</li>
-               </ul>
-           </div>
-       </div>
-   </div>
-</body>
-</html>
-'''
-
-ANALYTICS_TEMPLATE = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-   <meta charset="UTF-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>Analytics Dashboard - Bullhorn OAuth</title>
-   <script src="https://cdn.tailwindcss.com"></script>
-   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-   <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
-   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-   <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.0/dist/Recharts.js"></script>
-</head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
-   <div id="root">
-       <div class="p-6 text-center">
-           <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-           <p class="mt-4 text-gray-600">Loading dashboard...</p>
-       </div>
-   </div>
-   
-   <script type="text/babel">
-       const { useState, useEffect, useMemo } = React;
-       
-       // Safely get Recharts components - try multiple ways
-       let RechartsComponents = null;
-       if (typeof window !== 'undefined' && window.Recharts) {
-           RechartsComponents = window.Recharts;
-       } else if (typeof Recharts !== 'undefined') {
-           RechartsComponents = Recharts;
-       }
-       
-       const hasRecharts = RechartsComponents !== null;
-       const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = RechartsComponents || {};
-
-       function AnalyticsDashboard() {
-           const [submissions, setSubmissions] = useState([]);
-           const [placements, setPlacements] = useState([]);
-           const [loading, setLoading] = useState(true);
-           const [error, setError] = useState(null);
-           
-            // Filters (minimal fields: id, dateAdded only — no recruiter data)
-            // View mode: 'basic', 'weekly', 'monthly', 'recruiter'
-            const [viewMode, setViewMode] = useState('basic');
-            
-            // Analytics data
-            const [weeklyData, setWeeklyData] = useState([]);
-            const [monthlyData, setMonthlyData] = useState(null);
-            const [recruitersData, setRecruitersData] = useState([]);
-            
-            // Filters
-           const [year, setYear] = useState(new Date().getFullYear());
-           const [month, setMonth] = useState(new Date().getMonth() + 1);
-           
-            // Fetch data
-            const fetchData = async () => {
-            // Fetch basic data (existing)
-            const fetchBasicData = async () => {
-               setLoading(true);
-               setError(null);
-               try {
-                   console.log(`Fetching data for ${year}-${month}...`);
-                   const [subsRes, placeRes] = await Promise.all([
-                       fetch(`/api/submissions?year=${year}&month=${month}`),
-                       fetch(`/api/placements?year=${year}&month=${month}`)
-                   ]);
-                   
-                   console.log('Submissions response:', subsRes.status, subsRes.ok);
-                   console.log('Placements response:', placeRes.status, placeRes.ok);
-                   
-                   if (!subsRes.ok) {
-                       const errorText = await subsRes.text();
-                       console.error('Submissions error:', errorText);
-                       throw new Error(`Submissions API error: ${subsRes.status} - ${errorText.substring(0, 100)}`);
-                   }
-                   
-                   if (!placeRes.ok) {
-                       const errorText = await placeRes.text();
-                       console.error('Placements error:', errorText);
-                       throw new Error(`Placements API error: ${placeRes.status} - ${errorText.substring(0, 100)}`);
-                   }
-                   
-                   const subsData = await subsRes.json();
-                   const placeData = await placeRes.json();
-                   
-                   console.log('Submissions data:', subsData.count || 0, 'items');
-                   console.log('Placements data:', placeData.count || 0, 'items');
-                   
-                   setSubmissions(subsData.data || []);
-                   setPlacements(placeData.data || []);
-               } catch (err) {
-                   console.error('Fetch error:', err);
-                   setError(err.message || 'Failed to fetch data');
-               } finally {
-                   setLoading(false);
-               }
-           };
-           
-            // Fetch analytics data
-            const fetchAnalyticsData = async () => {
-                setLoading(true);
-                setError(null);
-                try {
-                    if (viewMode === 'weekly') {
-                        const res = await fetch(`/api/analytics/weekly?year=${year}&month=${month}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            setWeeklyData(Array.isArray(data) ? data : []);
-                        } else {
-                            throw new Error('Failed to fetch weekly data');
-                        }
-                    } else if (viewMode === 'monthly') {
-                        const res = await fetch(`/api/analytics/monthly?year=${year}&month=${month}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            setMonthlyData(data);
-                        } else {
-                            throw new Error('Failed to fetch monthly data');
-                        }
-                    } else if (viewMode === 'recruiter') {
-                        const res = await fetch(`/api/analytics/recruiters?year=${year}&month=${month}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            setRecruitersData(data.recruiters || []);
-                        } else {
-                            throw new Error('Failed to fetch recruiter data');
-                        }
-                    }
-                } catch (err) {
-                    setError(err.message || 'Failed to fetch analytics data');
-                } finally {
-                    setLoading(false);
-                }
-            };
-            
-           useEffect(() => {
-                fetchData();
-            }, [year, month]);
-                if (viewMode === 'basic') {
-                    fetchBasicData();
-                } else {
-                    fetchAnalyticsData();
-                }
-            }, [year, month, viewMode]);
-           
-           // Stats (minimal fields: id, dateAdded only)
-           const stats = useMemo(() => {
-               const totalSubmissions = submissions.length;
-               const totalPlacements = placements.length;
-               const conversionRate = totalSubmissions > 0 ? (totalPlacements / totalSubmissions * 100).toFixed(1) : 0;
-               return {
-                   totalSubmissions,
-                   totalPlacements,
-                   conversionRate: parseFloat(conversionRate)
-               };
-           }, [submissions, placements]);
-           
-           // Chart data: By Week only (we have dateAdded)
-           const getWeekNumber = (dateMs) => {
-               const date = new Date(dateMs);
-               const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-               const dayNum = d.getUTCDay() || 7;
-               d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-               const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-               return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-           };
-           
-           const chartData = useMemo(() => {
-               const weekMap = new Map();
-               submissions.forEach(sub => {
-                   if (!sub.dateAdded) return;
-                   const week = getWeekNumber(sub.dateAdded);
-                   const key = `Week ${week}`;
-                   if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0 });
-                   weekMap.get(key).submissions++;
-               });
-               placements.forEach(place => {
-                   if (!place.dateAdded) return;
-                   const week = getWeekNumber(place.dateAdded);
-                   const key = `Week ${week}`;
-                   if (!weekMap.has(key)) weekMap.set(key, { name: key, submissions: 0, placements: 0 });
-                   weekMap.get(key).placements++;
-               });
-               return Array.from(weekMap.values()).sort((a, b) => {
-                   const weekA = parseInt(a.name.replace('Week ', ''), 10);
-                   const weekB = parseInt(b.name.replace('Week ', ''), 10);
-                   return weekA - weekB;
-               });
-           }, [submissions, placements]);
-           
-           // Export CSV (by-week data)
-           const exportCSV = () => {
-               const rows = [['Week', 'Submissions', 'Placements']];
-               chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements)]));
-               const csv = rows.map(row => row.join(',')).join('\\n');
-               const blob = new Blob([csv], { type: 'text/csv' });
-               const url = window.URL.createObjectURL(blob);
-               const a = document.createElement('a');
-               a.href = url;
-               a.download = `analytics_${year}_${month}.csv`;
-               a.click();
-               window.URL.revokeObjectURL(url);
-           };
-           
-           const getConversionColor = (rate) => {
-               if (rate >= 20) return 'text-green-600 font-semibold';
-               if (rate >= 10) return 'text-yellow-600 font-semibold';
-               return 'text-red-600 font-semibold';
-           };
-           
-           return (
-               <div className="max-w-7xl mx-auto">
-                   <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-                       <div className="flex items-center justify-between mb-6">
-                           <div className="flex items-center gap-3">
-                               <span className="text-3xl">📊</span>
-                               <h1 className="text-3xl font-bold text-gray-800">Analytics Dashboard</h1>
-                           </div>
-                           <a href="/" className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                               ← Back to OAuth
-                           </a>
-                       </div>
-                       
-                        {/* View Mode Toggle */}
-                        <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">View Mode</label>
-                            <div className="flex gap-2 flex-wrap">
-                                <button
-                                    onClick={() => setViewMode('basic')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'basic' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Basic
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('weekly')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'weekly' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Weekly
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('monthly')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'monthly' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Monthly
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('recruiter')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'recruiter' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Recruiter View
-                                </button>
-                            </div>
-                        </div>
-                        
-                       {/* Filters */}
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-                           <div>
-                               <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                               <select
-                                   value={year}
-                                   onChange={(e) => setYear(parseInt(e.target.value))}
-                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                               >
-                                   {[2024, 2025, 2026, 2027].map(y => (
-                                       <option key={y} value={y}>{y}</option>
-                                   ))}
-                               </select>
-                           </div>
-                           <div>
-                               <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                               <select
-                                   value={month}
-                                   onChange={(e) => setMonth(parseInt(e.target.value))}
-                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                               >
-                                   {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                       <option key={m} value={m}>{new Date(2024, m - 1).toLocaleString('default', { month: 'long' })}</option>
-                                   ))}
-                               </select>
-                           </div>
-                       </div>
-                       
-                       {/* Action Buttons */}
-                       <div className="flex gap-3 mb-6">
-                           <button
-                                onClick={fetchData}
-                                onClick={() => {
-                                    if (viewMode === 'basic') fetchBasicData();
-                                    else fetchAnalyticsData();
-                                }}
-                               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                           >
-                               🔄 Refresh
-                           </button>
-                            <button
-                                onClick={exportCSV}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                            >
-                                📥 Export CSV
-                            </button>
-                            {viewMode === 'basic' && (
-                                <button
-                                    onClick={() => {
-                                        const rows = [['Week', 'Submissions', 'Placements']];
-                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements)]));
-                                        const csv = rows.map(row => row.join(',')).join('\\n');
-                                        const blob = new Blob([csv], { type: 'text/csv' });
-                                        const url = window.URL.createObjectURL(blob);
-                                        const a = document.createElement('a');
-                                        a.href = url;
-                                        a.download = `analytics_${year}_${month}.csv`;
-                                        a.click();
-                                        window.URL.revokeObjectURL(url);
-                                    }}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                                >
-                                    📥 Export CSV
-                                </button>
-                            )}
-                       </div>
-                       
-                       {error && (
-                           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                               <p className="text-red-800">Error: {error}</p>
-                           </div>
-                       )}
-                       
-                       {loading ? (
-                           <div className="text-center py-12">
-                               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                               <p className="mt-4 text-gray-600">Loading data...</p>
-                           </div>
-                       ) : (
-                           <>
-                                {/* Stat Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                        <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
-                                    </div>
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Total Placements</div>
-                                        <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
-                                    </div>
-                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                        <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                        <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
-                                            {stats.conversionRate}%
-                                {viewMode === 'basic' && (
-                                    <>
-                                        {/* Basic View - Existing */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                <div className="text-3xl font-bold text-blue-600">{stats.totalSubmissions}</div>
-                                            </div>
-                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Placements</div>
-                                                <div className="text-3xl font-bold text-green-600">{stats.totalPlacements}</div>
-                                            </div>
-                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                                <div className={`text-3xl font-bold ${getConversionColor(stats.conversionRate)}`}>
-                                                    {stats.conversionRate}%
-                                                </div>
-                                            </div>
-                                       </div>
-                                    </div>
-                                </div>
-                                        
-                                        {hasRecharts ? (
-                                            <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements by Week</h3>
-                                                    <ResponsiveContainer width="100%" height={300}>
-                                                        <BarChart data={chartData}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="placements" fill="#10b981" name="Placements" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                                <p className="text-yellow-800">Charts unavailable (Recharts failed to load).</p>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                               
-                                {/* Chart: By Week */}
-                                {hasRecharts ? (
-                                    <div className="mb-6">
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Submissions vs Placements by Week</h3>
-                                            <ResponsiveContainer width="100%" height={300}>
-                                                <BarChart data={chartData}>
-                                                    <CartesianGrid strokeDasharray="3 3" />
-                                                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                    <YAxis />
-                                                    <Tooltip />
-                                                    <Legend />
-                                                    <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                    <Bar dataKey="placements" fill="#10b981" name="Placements" />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                {viewMode === 'weekly' && (
-                                    <>
-                                        {/* Weekly View */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                            {weeklyData.length > 0 && (() => {
-                                                const totals = weeklyData.reduce((acc, week) => ({
-                                                    submissions: acc.submissions + week.submissions,
-                                                    presented: acc.presented + week.presented,
-                                                    placed: acc.placed + week.placed
-                                                }), { submissions: 0, presented: 0, placed: 0 });
-                                                return (
-                                                    <>
-                                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                            <div className="text-3xl font-bold text-blue-600">{totals.submissions}</div>
-                                                        </div>
-                                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Presented</div>
-                                                            <div className="text-3xl font-bold text-yellow-600">{totals.presented}</div>
-                                                        </div>
-                                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Total Placed</div>
-                                                            <div className="text-3xl font-bold text-green-600">{totals.placed}</div>
-                                                        </div>
-                                                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                            <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                                            <div className={`text-3xl font-bold ${getConversionColor(totals.submissions > 0 ? (totals.placed / totals.submissions * 100) : 0)}`}>
-                                                                {totals.submissions > 0 ? ((totals.placed / totals.submissions * 100).toFixed(1)) : 0}%
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                );
-                                            })()}
-                                       </div>
-                                    </div>
-                                ) : (
-                                    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                        <p className="text-yellow-800">Charts unavailable (Recharts failed to load). Stats and Export CSV still work.</p>
-                                    </div>
-                                        
-                                        {hasRecharts && weeklyData.length > 0 && (
-                                            <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Weekly Analytics</h3>
-                                                    <ResponsiveContainer width="100%" height={350}>
-                                                        <BarChart data={weeklyData.map(w => ({
-                                                            name: `${w.weekStart.split('-')[1]}/${w.weekStart.split('-')[2]}`,
-                                                            submissions: w.submissions,
-                                                            presented: w.presented,
-                                                            placed: w.placed
-                                                        }))}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
-                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        )}
-                                        
-                                        {weeklyData.length === 0 && !loading && (
-                                            <div className="text-center py-8 text-gray-500">No weekly data available</div>
-                                        )}
-                                    </>
-                                )}
-                                
-                                {viewMode === 'monthly' && monthlyData && (
-                                    <>
-                                        {/* Monthly View */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Submissions</div>
-                                                <div className="text-3xl font-bold text-blue-600">{monthlyData.submissions}</div>
-                                            </div>
-                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Presented</div>
-                                                <div className="text-3xl font-bold text-yellow-600">{monthlyData.presented}</div>
-                                            </div>
-                                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Total Placed</div>
-                                                <div className="text-3xl font-bold text-green-600">{monthlyData.placed}</div>
-                                            </div>
-                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                                <div className="text-sm text-gray-600 mb-1">Conversion Rate</div>
-                                                <div className={`text-3xl font-bold ${getConversionColor(monthlyData.submissions > 0 ? (monthlyData.placed / monthlyData.submissions * 100) : 0)}`}>
-                                                    {monthlyData.submissions > 0 ? ((monthlyData.placed / monthlyData.submissions * 100).toFixed(1)) : 0}%
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        {hasRecharts && monthlyData.byRecruiter && monthlyData.byRecruiter.length > 0 && (
-                                            <div className="mb-6">
-                                                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Monthly Analytics by Recruiter</h3>
-                                                    <ResponsiveContainer width="100%" height={350}>
-                                                        <BarChart data={monthlyData.byRecruiter.map(r => ({
-                                                            name: r.name.length > 15 ? r.name.substring(0, 15) + '...' : r.name,
-                                                            submissions: r.submissions,
-                                                            presented: r.presented,
-                                                            placed: r.placed
-                                                        }))}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="submissions" fill="#3b82f6" name="Submissions" />
-                                                            <Bar dataKey="presented" fill="#f59e0b" name="Presented" />
-                                                            <Bar dataKey="placed" fill="#10b981" name="Placed" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                                
-                                {viewMode === 'recruiter' && (
-                                    <>
-                                        {/* Recruiter Leaderboard */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-                                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Recruiter Leaderboard</h3>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full">
-                                                    <thead>
-                                                        <tr className="border-b border-gray-200">
-                                                            <th className="text-left py-2 px-4 font-semibold text-gray-700">Recruiter</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Submissions</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Presented</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Placed</th>
-                                                            <th className="text-right py-2 px-4 font-semibold text-gray-700">Conversion %</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {recruitersData.length === 0 ? (
-                                                            <tr>
-                                                                <td colSpan="5" className="text-center py-8 text-gray-500">No recruiter data available</td>
-                                                            </tr>
-                                                        ) : (
-                                                            recruitersData.map((rec, idx) => {
-                                                                const conversion = rec.totalSubmissions > 0 
-                                                                    ? (rec.totalPlacements / rec.totalSubmissions * 100).toFixed(1) 
-                                                                    : 0;
-                                                                return (
-                                                                    <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                                                                        <td className="py-2 px-4 text-gray-800">{rec.name}</td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalSubmissions}</td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">
-                                                            {(rec.statusBreakdown || {})['Presented'] || 0}
-                                                        </td>
-                                                        <td className="py-2 px-4 text-right text-gray-700">{rec.totalPlacements}</td>
-                                                                        <td className={`py-2 px-4 text-right ${getConversionColor(parseFloat(conversion))}`}>
-                                                                            {conversion}%
-                                                                        </td>
-                                                                    </tr>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </>
-                               )}
-                               
-                                {/* Explore API: meta endpoints */}
-                                {/* Explore API section - show in all views */}
-                               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                   <h3 className="text-lg font-semibold text-gray-800 mb-2">Explore API &amp; available fields</h3>
-                                    <p className="text-sm text-gray-600 mb-3">Data uses minimal fields (id, dateAdded) to avoid Bad Request errors. Use meta endpoints to see all queryable fields:</p>
-                                    <p className="text-sm text-gray-600 mb-3">Use meta endpoints to see all queryable fields:</p>
-                                   <div className="flex flex-wrap gap-2">
-                                       <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">JobSubmission meta</a>
-                                       <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm hover:bg-indigo-200">Placement meta</a>
-                                        <a href="/api/submissions?year=2025&month=1" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Submissions (raw)</a>
-                                        <a href="/api/placements?year=2025&month=1" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Placements (raw)</a>
-                                        <a href={`/api/analytics/weekly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Weekly (raw)</a>
-                                        <a href={`/api/analytics/monthly?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Monthly (raw)</a>
-                                        <a href={`/api/analytics/recruiters?year=${year}&month=${month}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg text-sm hover:bg-gray-300">Recruiters (raw)</a>
-                                   </div>
-                               </div>
-                           </>
-                       )}
-                   </div>
-               </div>
-           );
-       }
-
-       // Wait for DOM and libraries to be ready
-       function initApp() {
-           const rootEl = document.getElementById('root');
-           if (!rootEl) {
-               console.error('Root element not found');
-               return;
-           }
-           
-           if (typeof React === 'undefined') {
-               rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: React is not loaded</p></div>';
-               return;
-           }
-           
-           if (typeof ReactDOM === 'undefined') {
-               rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: ReactDOM is not loaded</p></div>';
-               return;
-           }
-           
-           // Recharts is optional - warn but don't block
-           if (typeof window.Recharts === 'undefined' && typeof Recharts === 'undefined') {
-               console.warn('Recharts library not loaded - charts will be disabled');
-           }
-           
-           console.log('Rendering AnalyticsDashboard...');
-           try {
-               if (ReactDOM.createRoot) {
-                   ReactDOM.createRoot(rootEl).render(<AnalyticsDashboard />);
-               } else {
-                   ReactDOM.render(<AnalyticsDashboard />, rootEl);
-               }
-               console.log('Component rendered successfully');
-           } catch (err) {
-               console.error('Render error:', err);
-               rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error rendering component</p><p class="text-red-500 text-sm mt-2">' + err.message + '</p></div>';
-           }
-       }
-       
-       // Initialize when DOM is ready
-       if (document.readyState === 'loading') {
-           document.addEventListener('DOMContentLoaded', initApp);
-       } else {
-           // DOM already loaded, wait a bit for scripts
-           setTimeout(initApp, 100);
-       }
-   </script>
+            <div class="mt-8 p-6 bg-gray-50 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">How It Works</h3>
+                <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                    <li>Click "Start OAuth Flow" to authenticate with Bullhorn</li>
+                    <li>Login with your Bullhorn credentials</li>
+                    <li>You'll be redirected back with tokens automatically saved</li>
+                    <li>Use "Test Connection" to verify the API connection</li>
+                    <li>Tokens are saved to <code class="bg-gray-200 px-1 rounded">token_store.json</code></li>
+                </ol>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 '''
 
 def load_tokens():
-"""Load tokens from file"""
-try:
-if os.path.exists(TOKEN_FILE):
-with open(TOKEN_FILE, 'r') as f:
-return json.load(f)
-except Exception as e:
-print(f"Error loading tokens: {e}")
-return None
-
-def save_tokens(tokens):
-"""Save tokens to file"""
-try:
-tokens['saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-with open(TOKEN_FILE, 'w') as f:
-json.dump(tokens, f, indent=2)
-return True
-except Exception as e:
-print(f"Error saving tokens: {e}")
-return False
-
-def exchange_for_bh_rest_token(access_token, rest_url=None):
-"""Exchange OAuth access token for BhRestToken"""
-login_urls = []
-
-if rest_url:
-if not rest_url.endswith('/'):
-rest_url += '/'
-login_urls.append(f"{rest_url}login")
-
-login_urls.append('https://rest.bullhornstaffing.com/rest-services/login')
-
-for login_url in login_urls:
-try:
-response = requests.post(
-login_url,
-params={'version': '*', 'access_token': access_token},
-headers={'Content-Type': 'application/x-www-form-urlencoded'},
-timeout=10
-)
-
-if response.ok:
-data = response.json()
-bh_rest_token = data.get('BhRestToken')
-new_rest_url = data.get('restUrl')
-
-if bh_rest_token:
-print(f"✅ BhRestToken obtained successfully")
-return bh_rest_token, new_rest_url
-except Exception as e:
-print(f"Error with {login_url}: {e}")
-continue
-
-return None, None
-
-def refresh_session():
-"""Background task to refresh BhRestToken"""
-print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Running token refresh...")
-
-tokens = load_tokens()
-if not tokens or not tokens.get('access_token'):
-print("⚠️ No tokens to refresh")
-return
-
-try:
-# Re-exchange access_token for new BhRestToken
-access_token = tokens.get('access_token')
-rest_url = tokens.get('rest_url')
-
-bh_rest_token, new_rest_url = exchange_for_bh_rest_token(access_token, rest_url)
-
-if bh_rest_token:
-tokens['bh_rest_token'] = bh_rest_token
-if new_rest_url:
-tokens['rest_url'] = new_rest_url
-tokens['last_refresh'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-save_tokens(tokens)
-print(f"✅ Session refreshed successfully at {tokens['last_refresh']}")
-else:
-print("⚠️ Failed to refresh BhRestToken")
-except Exception as e:
-print(f"❌ Refresh error: {e}")
-
-# Schedule auto-refresh
-scheduler.add_job(
-func=refresh_session,
-trigger="interval",
-minutes=REFRESH_INTERVAL_MINUTES,
-id='token_refresh',
-name='Refresh BhRestToken',
-replace_existing=True
-)
-
-@app.route('/')
-def home():
-"""Home page - show status"""
-tokens = load_tokens()
-session_status = "Active" if tokens and tokens.get('bh_rest_token') else "Not authenticated"
-return render_template_string(
-HTML_TEMPLATE, 
-tokens=tokens, 
-session_status=session_status,
-refresh_interval=REFRESH_INTERVAL_MINUTES
-)
-
-@app.route('/analytics')
-def analytics():
-"""Analytics dashboard page"""
-return render_template_string(ANALYTICS_TEMPLATE)
-
-@app.route('/login')
-def login():
-"""Redirect to Bullhorn OAuth"""
-if not CLIENT_ID:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
-
-auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
-return redirect(auth_url)
-
-@app.route('/oauth/callback')
-def callback():
-"""Handle OAuth callback - AUTOMATICALLY exchanges for BhRestToken"""
-code = request.args.get('code')
-error = request.args.get('error')
-
-if error:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message=f"OAuth error: {error}")
-
-if not code:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message="No authorization code received")
-
-try:
-# Step 1: Exchange code for OAuth tokens
-token_url = 'https://auth.bullhornstaffing.com/oauth/token'
-params = {
-'grant_type': 'authorization_code',
-'code': code,
-'client_id': CLIENT_ID,
-'client_secret': CLIENT_SECRET,
-'redirect_uri': REDIRECT_URI
-}
-
-response = requests.post(token_url, params=params)
-data = response.json()
-
-if not response.ok or 'access_token' not in data:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message=f"Token exchange failed: {data.get('error_description', data)}")
-
-access_token = data.get('access_token')
-refresh_token = data.get('refresh_token')
-rest_url = data.get('restUrl')
-
-# Step 2: AUTOMATICALLY exchange for BhRestToken
-print("Automatically exchanging for BhRestToken...")
-bh_rest_token, new_rest_url = exchange_for_bh_rest_token(access_token, rest_url)
-
-if new_rest_url:
-rest_url = new_rest_url
-
-# Step 3: Save everything
-tokens = {
-'access_token': access_token,
-'refresh_token': refresh_token,
-'rest_url': rest_url,
-'bh_rest_token': bh_rest_token,
-'expires_in': data.get('expires_in'),
-'last_refresh': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-}
-save_tokens(tokens)
-
-if bh_rest_token:
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Active",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-message="✅ Authentication complete! BhRestToken obtained automatically. Auto-refresh enabled.")
-else:
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Partial",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-error=True,
-message="⚠️ OAuth tokens saved but BhRestToken exchange failed. Click 'Test Connection' to retry.")
-
-except Exception as e:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message=f"Error: {str(e)}")
-
-@app.route('/test')
-def test():
-"""Test API connection and refresh if needed"""
-tokens = load_tokens()
-
-if not tokens or not tokens.get('access_token'):
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message="No tokens found. Please authenticate first.")
-
-try:
-rest_url = tokens.get('rest_url')
-bh_rest_token = tokens.get('bh_rest_token')
-
-# If no BhRestToken, try to get one
-if not bh_rest_token:
-access_token = tokens.get('access_token')
-bh_rest_token, new_rest_url = exchange_for_bh_rest_token(access_token, rest_url)
-
-if bh_rest_token:
-tokens['bh_rest_token'] = bh_rest_token
-if new_rest_url:
-tokens['rest_url'] = new_rest_url
-rest_url = new_rest_url
-tokens['last_refresh'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-save_tokens(tokens)
-else:
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Failed",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-error=True, 
-message="Failed to obtain BhRestToken. Please re-authenticate.")
-
-# Test connection with ping
-if not rest_url.endswith('/'):
-rest_url += '/'
-
-ping_url = f"{rest_url}ping"
-response = requests.get(ping_url, params={'BhRestToken': bh_rest_token})
-
-if response.ok:
-data = response.json()
-expires = datetime.fromtimestamp(data['sessionExpires']/1000).strftime('%Y-%m-%d %H:%M:%S')
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Active",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-message=f"✅ Connection successful! Session expires: {expires}")
-else:
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Error",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-error=True, 
-message=f"Connection test failed: {response.text}")
-
-except Exception as e:
-return render_template_string(HTML_TEMPLATE, 
-tokens=tokens,
-session_status="Error",
-refresh_interval=REFRESH_INTERVAL_MINUTES,
-error=True, 
-message=f"Error: {str(e)}")
-
-@app.route('/logout')
-def logout():
-"""Clear tokens"""
-try:
-if os.path.exists(TOKEN_FILE):
-os.remove(TOKEN_FILE)
-return render_template_string(HTML_TEMPLATE, 
-message="Tokens cleared successfully")
-except Exception as e:
-return render_template_string(HTML_TEMPLATE, 
-error=True, 
-message=f"Error clearing tokens: {str(e)}")
-
-# ==================== HELPER FUNCTIONS FOR ANALYTICS ====================
-
-def fetch_job_submissions(start_ms, end_ms, include_recruiter=True):
-    """
-    Safely fetch JobSubmission records from Bullhorn.
-    
-    Args:
-        start_ms: Start timestamp in milliseconds
-        end_ms: End timestamp in milliseconds
-        include_recruiter: If True, include sendingUser field
-    
-    Returns:
-        List of submission records or None on error
-    """
-    tokens = load_tokens()
-    if not tokens or not tokens.get('bh_rest_token'):
-        return None
-    
+    """Load tokens from file"""
     try:
-        rest_url = tokens['rest_url']
-        if not rest_url.endswith('/'):
-            rest_url += '/'
-        
-        url = f"{rest_url}query/JobSubmission"
-        
-        if include_recruiter:
-            fields = 'id,dateAdded,status,sendingUser(id,firstName,lastName)'
-        else:
-            fields = 'id,dateAdded,status'
-        
-        params = {
-            'BhRestToken': tokens['bh_rest_token'],
-            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-            'fields': fields,
-            'orderBy': '-dateAdded',
-            'count': 500
-        }
-        
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data.get('data', [])
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, 'r') as f:
+                return json.load(f)
     except Exception as e:
-        print(f"Error fetching JobSubmissions: {e}")
-        return None
-
-def fetch_placements(start_ms, end_ms, include_recruiter=True):
-    """
-    Safely fetch Placement records from Bullhorn.
-    
-    Args:
-        start_ms: Start timestamp in milliseconds
-        end_ms: End timestamp in milliseconds
-        include_recruiter: If True, include sendingUser field
-    
-    Returns:
-        List of placement records or None on error
-    """
-    tokens = load_tokens()
-    if not tokens or not tokens.get('bh_rest_token'):
-        return None
-    
-    try:
-        rest_url = tokens['rest_url']
-        if not rest_url.endswith('/'):
-            rest_url += '/'
-        
-        url = f"{rest_url}query/Placement"
-        
-        if include_recruiter:
-            fields = 'id,dateAdded,sendingUser(id,firstName,lastName)'
-        else:
-            fields = 'id,dateAdded'
-        
-        params = {
-            'BhRestToken': tokens['bh_rest_token'],
-            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-            'fields': fields,
-            'orderBy': '-dateAdded',
-            'count': 500
-        }
-        
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data.get('data', [])
-    except Exception as e:
-        print(f"Error fetching Placements: {e}")
-        return None
-
-def get_recruiter_name(item):
-    """Extract recruiter name from sendingUser field"""
-    if item.get('sendingUser') and item['sendingUser'].get('firstName') and item['sendingUser'].get('lastName'):
-        return f"{item['sendingUser']['firstName']} {item['sendingUser']['lastName']}"
-    return "Unknown"
-
-def get_recruiter_id(item):
-    """Extract recruiter ID from sendingUser field"""
-    if item.get('sendingUser') and item['sendingUser'].get('id'):
-        return item['sendingUser']['id']
+        print(f"Error loading tokens: {e}")
     return None
 
-def get_week_range(date_ms):
-    """Get week start and end dates for a given timestamp"""
-    date = datetime.fromtimestamp(date_ms / 1000)
-    # Get Monday of the week
-    days_since_monday = date.weekday()
-    week_start = date - timedelta(days=days_since_monday)
-    week_end = week_start + timedelta(days=6)
-    return week_start, week_end
+def save_tokens(tokens):
+    """Save tokens to file"""
+    try:
+        tokens['saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(TOKEN_FILE, 'w') as f:
+            json.dump(tokens, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving tokens: {e}")
+        return False
 
-# ==================== API ENDPOINTS ====================
+def refresh_access_token(refresh_token):
+    """Refresh the access token using refresh token - returns full token data"""
+    try:
+        token_url = 'https://auth.bullhornstaffing.com/oauth/token'
+        params = {
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET
+        }
+        response = requests.post(token_url, params=params)
+        data = response.json()
+        
+        if response.ok and 'access_token' in data:
+            return {
+                'access_token': data.get('access_token'),
+                'refresh_token': data.get('refresh_token', refresh_token),  # Keep old if not provided
+                'expires_in': data.get('expires_in', 3600),  # Default to 1 hour
+                'rest_url': data.get('restUrl')  # May be included
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
+        return None
 
-@app.route('/api/tokens')
-def api_tokens():
-"""API endpoint to get current tokens"""
-tokens = load_tokens()
-if tokens:
-# Don't expose sensitive tokens in API
-safe_tokens = {
-'rest_url': tokens.get('rest_url'),
-'last_refresh': tokens.get('last_refresh'),
-'saved_at': tokens.get('saved_at'),
-'has_bh_rest_token': bool(tokens.get('bh_rest_token'))
-}
-return jsonify(safe_tokens)
-return jsonify({'error': 'No tokens found'}), 404
+def refresh_tokens_if_needed():
+    """Proactively refresh access tokens if they're close to expiring"""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('refresh_token'):
+        return False
+    
+    # Check if we have expiration info
+    expires_in = tokens.get('expires_in')
+    saved_at = tokens.get('saved_at')
+    
+    if not expires_in or not saved_at:
+        # Try to refresh anyway if we have refresh token
+        logger.info("No expiration info, attempting token refresh")
+        token_data = refresh_access_token(tokens.get('refresh_token'))
+        if token_data:
+            tokens['access_token'] = token_data['access_token']
+            tokens['refresh_token'] = token_data.get('refresh_token', tokens.get('refresh_token'))
+            tokens['expires_in'] = token_data.get('expires_in', 3600)
+            if token_data.get('rest_url'):
+                tokens['rest_url'] = token_data['rest_url']
+            save_tokens(tokens)
+            logger.info("Token refreshed successfully")
+            return True
+        return False
+    
+    # Calculate if token expires within 5 minutes
+    try:
+        saved_time = datetime.strptime(saved_at, '%Y-%m-%d %H:%M:%S')
+        expires_at = saved_time + timedelta(seconds=int(expires_in))
+        time_until_expiry = expires_at - datetime.now()
+        
+        if time_until_expiry.total_seconds() < 300:  # Less than 5 minutes
+            logger.info(f"Token expires in {time_until_expiry}, refreshing...")
+            token_data = refresh_access_token(tokens.get('refresh_token'))
+            if token_data:
+                tokens['access_token'] = token_data['access_token']
+                tokens['refresh_token'] = token_data.get('refresh_token', tokens.get('refresh_token'))
+                tokens['expires_in'] = token_data.get('expires_in', expires_in)
+                if token_data.get('rest_url'):
+                    tokens['rest_url'] = token_data['rest_url']
+                save_tokens(tokens)
+                logger.info("Token refreshed proactively")
+                return True
+    except Exception as e:
+        logger.error(f"Error checking token expiration: {e}")
+    
+    return False
 
-@app.route('/api/status')
-def api_status():
-"""Check session status"""
-tokens = load_tokens()
+def get_bh_rest_token(force_refresh=False):
+    """Get or create a valid BhRestToken session"""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('access_token'):
+        logger.warning("No tokens available for BhRestToken")
+        return None, None
+    
+    # Check if we have a valid BhRestToken and it's not expired
+    bh_rest_token = tokens.get('bh_rest_token')
+    rest_url = tokens.get('rest_url')
+    
+    if bh_rest_token and not force_refresh:
+        # Verify token is still valid by checking if we have rest_url
+        if rest_url:
+            return bh_rest_token, rest_url
+    
+    # Need to establish a new session
+    access_token = tokens.get('access_token')
+    if not rest_url:
+        rest_url = 'https://rest.bullhornstaffing.com/rest-services/'
+    elif not rest_url.startswith('http'):
+        rest_url = 'https://' + rest_url
+    if not rest_url.endswith('/'):
+        rest_url += '/'
+    
+    login_urls = [f"{rest_url}login", 'https://rest.bullhornstaffing.com/rest-services/login']
+    
+    for login_url in login_urls:
+        try:
+            login_response = requests.post(
+                login_url,
+                params={'version': '*', 'access_token': access_token},
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=10
+            )
+            login_data = login_response.json()
+            
+            if login_response.ok and 'BhRestToken' in login_data:
+                bh_rest_token = login_data['BhRestToken']
+                if 'restUrl' in login_data:
+                    rest_url = login_data['restUrl']
+                    if not rest_url.endswith('/'):
+                        rest_url += '/'
+                
+                # Save the session token
+                tokens['bh_rest_token'] = bh_rest_token
+                tokens['rest_url'] = rest_url
+                save_tokens(tokens)
+                logger.info("BhRestToken session established")
+                return bh_rest_token, rest_url
+        except Exception as e:
+            logger.error(f"Error establishing session with {login_url}: {e}")
+            continue
+    
+    # If still no token, try refreshing access token first
+    if tokens.get('refresh_token'):
+        logger.info("Attempting to refresh access token before establishing session")
+        token_data = refresh_access_token(tokens.get('refresh_token'))
+        if token_data:
+            tokens['access_token'] = token_data['access_token']
+            tokens['refresh_token'] = token_data.get('refresh_token', tokens.get('refresh_token'))
+            tokens['expires_in'] = token_data.get('expires_in', tokens.get('expires_in', 3600))
+            if token_data.get('rest_url'):
+                tokens['rest_url'] = token_data['rest_url']
+            save_tokens(tokens)
+            # Retry with new token
+            return get_bh_rest_token(force_refresh=True)
+    
+    logger.error("Failed to establish BhRestToken session")
+    return None, None
 
-if not tokens or not tokens.get('bh_rest_token'):
-return jsonify({
-'status': 'not_authenticated',
-'message': 'No active session'
-}), 401
+def ensure_valid_session():
+    """Ensure we have valid tokens and session - auto-refresh if needed"""
+    # First, refresh tokens if needed
+    refresh_tokens_if_needed()
+    
+    # Then, ensure we have a valid BhRestToken
+    bh_rest_token, rest_url = get_bh_rest_token()
+    return bh_rest_token, rest_url
 
-try:
-rest_url = tokens.get('rest_url')
-if not rest_url.endswith('/'):
-rest_url += '/'
+def load_jobs():
+    """Load jobs from file"""
+    try:
+        if os.path.exists(JOBS_FILE):
+            with open(JOBS_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading jobs: {e}")
+    return {
+        'last_sync': None,
+        'bullhorn_jobs': [],
+        'ahsa_jobs': [],
+        'sync_stats': {
+            'total_jobs': 0,
+            'last_success': None,
+            'last_error': None
+        }
+    }
 
-ping_url = f"{rest_url}ping"
-response = requests.get(
-ping_url,
-params={'BhRestToken': tokens.get('bh_rest_token')},
-timeout=5
-)
+def save_jobs(jobs_data):
+    """Save jobs to file"""
+    try:
+        with open(JOBS_FILE, 'w') as f:
+            json.dump(jobs_data, f, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving jobs: {e}")
+        return False
 
-if response.ok:
-data = response.json()
-expires = datetime.fromtimestamp(data['sessionExpires']/1000)
-return jsonify({
-'status': 'active',
-'session_expires': expires.strftime('%Y-%m-%d %H:%M:%S'),
-'last_refresh': tokens.get('last_refresh'),
-'auto_refresh_enabled': True,
-'refresh_interval_minutes': REFRESH_INTERVAL_MINUTES
-})
-else:
-return jsonify({
-'status': 'expired',
-'message': 'Session expired, attempting refresh...'
-}), 401
-except Exception as e:
-return jsonify({
-'status': 'error',
-'message': str(e)
-}), 500
+def fetch_bullhorn_jobs(rest_url, bh_rest_token):
+    """Fetch jobs from Bullhorn API"""
+    try:
+        # Query Bullhorn for JobOrder entities
+        # Adjust the query based on your needs
+        query_url = f"{rest_url}query/JobOrder"
+        
+        # Basic query - you may want to customize this
+        params = {
+            'where': 'isOpen=1',  # Only open jobs
+            'fields': 'id,title,dateAdded,dateLastModified,status,employmentType,address,clientContact',
+            'orderBy': '-dateLastModified',
+            'count': 500,  # Adjust as needed
+            'BhRestToken': bh_rest_token
+        }
+        
+        response = requests.get(query_url, params=params, timeout=30)
+        
+        if response.ok:
+            data = response.json()
+            jobs = data.get('data', [])
+            logger.info(f"Fetched {len(jobs)} jobs from Bullhorn")
+            return jobs
+        else:
+            logger.error(f"Failed to fetch jobs: {response.status_code} - {response.text}")
+            return []
+    except Exception as e:
+        logger.error(f"Error fetching Bullhorn jobs: {e}")
+        return []
 
-@app.route('/api/refresh', methods=['POST'])
-def api_refresh():
-"""Manually trigger token refresh"""
-refresh_session()
-tokens = load_tokens()
+def sync_jobs_from_bullhorn():
+    """Main function to sync jobs from Bullhorn - called by scheduler"""
+    logger.info("Starting job sync from Bullhorn...")
+    
+    # Ensure we have a valid session
+    bh_rest_token, rest_url = ensure_valid_session()
+    
+    if not bh_rest_token or not rest_url:
+        logger.error("Cannot sync jobs: No valid session")
+        jobs_data = load_jobs()
+        jobs_data['sync_stats']['last_error'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        save_jobs(jobs_data)
+        return False
+    
+    try:
+        # Fetch jobs from Bullhorn
+        bullhorn_jobs = fetch_bullhorn_jobs(rest_url, bh_rest_token)
+        
+        # Load existing jobs data
+        jobs_data = load_jobs()
+        
+        # Update with new data
+        jobs_data['bullhorn_jobs'] = bullhorn_jobs
+        jobs_data['last_sync'] = datetime.now().isoformat()
+        jobs_data['sync_stats']['total_jobs'] = len(bullhorn_jobs)
+        jobs_data['sync_stats']['last_success'] = datetime.now().isoformat()
+        jobs_data['sync_stats']['last_error'] = None
+        
+        save_jobs(jobs_data)
+        logger.info(f"Successfully synced {len(bullhorn_jobs)} jobs from Bullhorn")
+        return True
+    except Exception as e:
+        logger.error(f"Error during job sync: {e}")
+        jobs_data = load_jobs()
+        jobs_data['sync_stats']['last_error'] = datetime.now().isoformat()
+        save_jobs(jobs_data)
+        return False
 
-if tokens and tokens.get('bh_rest_token'):
-return jsonify({
-'status': 'success',
-'last_refresh': tokens.get('last_refresh'),
-'message': 'Tokens refreshed successfully'
-})
-else:
-return jsonify({
-'status': 'failed',
-'message': 'Token refresh failed'
-}), 500
+def sync_jobs_from_ahsa():
+    """Placeholder for future AHSA integration"""
+    logger.info("AHSA sync not yet implemented")
+    return False
+
+@app.route('/keepalive')
+def keepalive():
+    """Keepalive endpoint - pinged by Render cron job to prevent shutdown"""
+    return jsonify({
+        'status': 'ok',
+        'timestamp': datetime.now().isoformat(),
+        'message': 'App is alive'
+    }), 200
+
+@app.route('/api/jobs')
+def api_jobs():
+    """API endpoint to get all synced jobs"""
+    jobs_data = load_jobs()
+    return jsonify(jobs_data)
+
+@app.route('/api/jobs/sync', methods=['POST', 'GET'])
+def api_jobs_sync():
+    """Manually trigger job sync"""
+    success = sync_jobs_from_bullhorn()
+    if success:
+        return jsonify({
+            'status': 'success',
+            'message': 'Job sync completed successfully',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'Job sync failed - check logs',
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/jobs/stats')
+def api_jobs_stats():
+    """Get job sync statistics"""
+    jobs_data = load_jobs()
+    return jsonify({
+        'last_sync': jobs_data.get('last_sync'),
+        'total_jobs': jobs_data.get('sync_stats', {}).get('total_jobs', 0),
+        'bullhorn_jobs_count': len(jobs_data.get('bullhorn_jobs', [])),
+        'ahsa_jobs_count': len(jobs_data.get('ahsa_jobs', [])),
+        'last_success': jobs_data.get('sync_stats', {}).get('last_success'),
+        'last_error': jobs_data.get('sync_stats', {}).get('last_error')
+    })
+
 
 @app.route('/api/submissions')
 def api_submissions():
-"""Fetch submissions from Bullhorn"""
-tokens = load_tokens()
+    """Fetch job submissions from Bullhorn with candidate, status, job title, client.
+    GET /api/submissions?year=YYYY&month=M
+    """
+    bh_rest_token, rest_url = ensure_valid_session()
+    if not bh_rest_token or not rest_url:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
 
-if not tokens or not tokens.get('bh_rest_token'):
-return jsonify({'error': 'Not authenticated'}), 401
-
-# Get parameters
-year = request.args.get('year', datetime.now().year, type=int)
-month = request.args.get('month', 1, type=int)
-
-# Calculate date range
-start_date = f"{year}-{month:02d}-01"
-
-# Get last day of month
-import calendar
-last_day = calendar.monthrange(year, month)[1]
-end_date = f"{year}-{month:02d}-{last_day}"
-
-# Convert to milliseconds
-start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-start_ms = int(start_dt.timestamp() * 1000)
-end_ms = int(end_dt.timestamp() * 1000)
-
-# Query Bullhorn
-try:
-rest_url = tokens['rest_url']
-if not rest_url.endswith('/'):
-rest_url += '/'
-
-url = f"{rest_url}query/JobSubmission"
-# Minimal fields only - no nested associations to avoid 400 Bad Request
-fields = 'id,dateAdded'
-
-params = {
-'BhRestToken': tokens['bh_rest_token'],
-'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-'fields': fields,
-'orderBy': '-dateAdded',
-'count': 500
-}
-
-response = requests.get(url, params=params, timeout=30)
-response.raise_for_status()
-data = response.json()
-
-submissions = data.get('data', [])
-
-return jsonify({
-'success': True,
-'count': len(submissions),
-'year': year,
-'month': month,
-'data': submissions
-})
-
-except Exception as e:
-return jsonify({
-'success': False,
-'error': str(e)
-}), 500
-
-@app.route('/api/placements')
-def api_placements():
-"""Fetch placements from Bullhorn"""
-tokens = load_tokens()
-
-if not tokens or not tokens.get('bh_rest_token'):
-return jsonify({'error': 'Not authenticated'}), 401
-
-# Get parameters
-year = request.args.get('year', datetime.now().year, type=int)
-month = request.args.get('month', 1, type=int)
-
-# Calculate date range
-start_date = f"{year}-{month:02d}-01"
-
-import calendar
-last_day = calendar.monthrange(year, month)[1]
-end_date = f"{year}-{month:02d}-{last_day}"
-
-# Convert to milliseconds
-start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-start_ms = int(start_dt.timestamp() * 1000)
-end_ms = int(end_dt.timestamp() * 1000)
-
-# Query Bullhorn
-try:
-rest_url = tokens['rest_url']
-if not rest_url.endswith('/'):
-rest_url += '/'
-
-url = f"{rest_url}query/Placement"
-
-# Minimal fields only - no nested associations to avoid 400 Bad Request
-fields = 'id,dateAdded'
-
-params = {
-'BhRestToken': tokens['bh_rest_token'],
-'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-'fields': fields,
-'orderBy': '-dateAdded',
-'count': 500
-}
-
-response = requests.get(url, params=params, timeout=30)
-response.raise_for_status()
-data = response.json()
-
-placements = data.get('data', [])
-
-return jsonify({
-'success': True,
-'count': len(placements),
-'year': year,
-'month': month,
-'data': placements
-})
-
-except Exception as e:
-return jsonify({
-'success': False,
-'error': str(e)
-}), 500
-
-@app.route('/api/meta/<entity>')
-def api_meta(entity):
-"""Fetch entity metadata from Bullhorn (all available fields). Use entity=JobSubmission or Placement."""
-tokens = load_tokens()
-
-if not tokens or not tokens.get('bh_rest_token'):
-return jsonify({'error': 'Not authenticated'}), 401
-
-allowed = {'JobSubmission', 'Placement', 'JobOrder', 'Candidate', 'CorporateUser'}
-if entity not in allowed:
-return jsonify({'error': f'Entity not allowed. Use one of: {", ".join(sorted(allowed))}'}), 400
-
-try:
-rest_url = tokens['rest_url']
-if not rest_url.endswith('/'):
-rest_url += '/'
-url = f"{rest_url}meta/{entity}"
-params = {
-'BhRestToken': tokens['bh_rest_token'],
-'fields': '*',
-'meta': 'full'
-}
-response = requests.get(url, params=params, timeout=30)
-response.raise_for_status()
-data = response.json()
-return jsonify(data)
-except Exception as e:
-return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/analytics/weekly')
-def api_analytics_weekly():
-    """Get weekly analytics aggregated by week"""
-    tokens = load_tokens()
-    if not tokens or not tokens.get('bh_rest_token'):
-        return jsonify({'error': 'Not authenticated'}), 401
-    
     year = request.args.get('year', datetime.now().year, type=int)
     month = request.args.get('month', datetime.now().month, type=int)
-    
-    # Calculate month date range
-    import calendar
-    start_date = datetime(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    start_ms = int(start_date.timestamp() * 1000)
-    end_ms = int(end_date.timestamp() * 1000)
-    
-    try:
-        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
-        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
-        
-        if submissions is None or placements is None:
-            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
-        
-        # Group by week
-        week_map = {}
-        
-        # Process submissions
-        for sub in submissions:
-            if not sub.get('dateAdded'):
-                continue
-            
-            week_start, week_end = get_week_range(sub['dateAdded'])
-            week_key = week_start.strftime('%Y-%m-%d')
-            
-            if week_key not in week_map:
-                week_map[week_key] = {
-                    'weekStart': week_start.strftime('%Y-%m-%d'),
-                    'weekEnd': week_end.strftime('%Y-%m-%d'),
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'byRecruiter': {}
-                }
-            
-            week_data = week_map[week_key]
-            week_data['submissions'] += 1
-            
-            # Check if presented (status is "Presented" or contains "presented")
-            status = sub.get('status', '') or ''
-            status_lower = status.lower()
-            if status_lower == 'presented' or 'presented' in status_lower:
-                week_data['presented'] += 1
-            
-            # Group by recruiter
-            recruiter_id = get_recruiter_id(sub)
-            recruiter_name = get_recruiter_name(sub)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
-            
-            if recruiter_key not in week_data['byRecruiter']:
-                week_data['byRecruiter'][recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'statusCounts': {}
-                }
-            
-            rec_data = week_data['byRecruiter'][recruiter_key]
-            rec_data['submissions'] += 1
-            
-            status_val = sub.get('status', 'Unknown')
-            if status_lower == 'presented' or 'presented' in status_lower:
-                rec_data['presented'] += 1
-            rec_data['statusCounts'][status_val] = rec_data['statusCounts'].get(status_val, 0) + 1
-        
-        # Process placements (count as "placed")
-        for place in placements:
-            if not place.get('dateAdded'):
-                continue
-            
-            week_start, week_end = get_week_range(place['dateAdded'])
-            week_key = week_start.strftime('%Y-%m-%d')
-            
-            if week_key not in week_map:
-                week_map[week_key] = {
-                    'weekStart': week_start.strftime('%Y-%m-%d'),
-                    'weekEnd': week_end.strftime('%Y-%m-%d'),
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'byRecruiter': {}
-                }
-            
-            week_data = week_map[week_key]
-            week_data['placed'] += 1
-            
-            # Group placement by recruiter
-            recruiter_id = get_recruiter_id(place)
-            recruiter_name = get_recruiter_name(place)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
-            
-            if recruiter_key not in week_data['byRecruiter']:
-                week_data['byRecruiter'][recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'statusCounts': {}
-                }
-            
-            week_data['byRecruiter'][recruiter_key]['placed'] += 1
-        
-        # Convert to list format
-        result = []
-        for week_key in sorted(week_map.keys()):
-            week_data = week_map[week_key]
-            week_data['byRecruiter'] = list(week_data['byRecruiter'].values())
-            result.append(week_data)
-        
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/analytics/monthly')
-def api_analytics_monthly():
-    """Get monthly analytics aggregated for entire month"""
-    tokens = load_tokens()
-    if not tokens or not tokens.get('bh_rest_token'):
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', datetime.now().month, type=int)
-    
-    # Calculate month date range
-    import calendar
-    start_date = datetime(year, month, 1)
+    start_date = f"{year}-{month:02d}-01"
     last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    start_ms = int(start_date.timestamp() * 1000)
-    end_ms = int(end_date.timestamp() * 1000)
+    end_date = f"{year}-{month:02d}-{last_day}"
+
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    fields = 'id,dateAdded,status,source,candidate(id,firstName,lastName,email),jobOrder(id,title,clientCorporation(id,name))'
+
+    if not rest_url.endswith('/'):
+        rest_url += '/'
+    url = f"{rest_url}query/JobSubmission"
+
+    all_data = []
+    start = 0
+    count = 500
+    while True:
+        params = {
+            'BhRestToken': bh_rest_token,
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': count,
+            'start': start
+        }
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+        records = data.get('data', [])
+        if not records:
+            break
+        all_data.extend(records)
+        if len(records) < count:
+            break
+        start += count
+
+    return jsonify({
+        'success': True,
+        'count': len(all_data),
+        'year': year,
+        'month': month,
+        'data': all_data
+    })
+
+
+@app.route('/')
+def home():
+    """Home page - show status"""
+    tokens = load_tokens()
+    return render_template_string(HTML_TEMPLATE, tokens=tokens)
+
+@app.route('/login')
+def login():
+    """Redirect to Bullhorn OAuth"""
+    if not CLIENT_ID:
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
     
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    return redirect(auth_url)
+
+@app.route('/oauth/callback')
+def callback():
+    """Handle OAuth callback"""
+    code = request.args.get('code')
+    error = request.args.get('error')
+    
+    if error:
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message=f"OAuth error: {error}")
+    
+    if not code:
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message="No authorization code received")
+    
+    # Exchange code for token
     try:
-        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
-        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
-        
-        if submissions is None or placements is None:
-            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
-        
-        # Aggregate for entire month
-        result = {
-            'monthStart': start_date.strftime('%Y-%m-%d'),
-            'monthEnd': end_date.strftime('%Y-%m-%d'),
-            'submissions': 0,
-            'presented': 0,
-            'placed': 0,
-            'byRecruiter': {}
+        token_url = 'https://auth.bullhornstaffing.com/oauth/token'
+        params = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'redirect_uri': REDIRECT_URI
         }
         
-        # Process submissions
-        for sub in submissions:
-            result['submissions'] += 1
-            
-            status = sub.get('status', '') or ''
-            status_lower = status.lower()
-            if status_lower == 'presented' or 'presented' in status_lower:
-                result['presented'] += 1
-            
-            # Group by recruiter
-            recruiter_id = get_recruiter_id(sub)
-            recruiter_name = get_recruiter_name(sub)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
-            
-            if recruiter_key not in result['byRecruiter']:
-                result['byRecruiter'][recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'statusCounts': {}
-                }
-            
-            rec_data = result['byRecruiter'][recruiter_key]
-            rec_data['submissions'] += 1
-            
-            status_val = sub.get('status', 'Unknown')
-            if status_lower == 'presented' or 'presented' in status_lower:
-                rec_data['presented'] += 1
-            rec_data['statusCounts'][status_val] = rec_data['statusCounts'].get(status_val, 0) + 1
+        response = requests.post(token_url, params=params)
+        data = response.json()
         
-        # Process placements (count as "placed")
-        for place in placements:
-            result['placed'] += 1
+        if response.ok and 'access_token' in data:
+            # Get REST URL from login endpoint
+            access_token = data.get('access_token')
+            rest_url = data.get('restUrl')
             
-            # Group placement by recruiter
-            recruiter_id = get_recruiter_id(place)
-            recruiter_name = get_recruiter_name(place)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
+            # If restUrl not in initial response, we need to call /login to get it
+            if not rest_url:
+                try:
+                    # Try to get REST URL from the login endpoint
+                    login_url = 'https://rest.bullhornstaffing.com/rest-services/login'
+                    login_response = requests.post(
+                        login_url,
+                        params={'access_token': access_token, 'version': '*'},
+                        headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                    )
+                    login_data = login_response.json()
+                    if login_response.ok and 'restUrl' in login_data:
+                        rest_url = login_data['restUrl']
+                except Exception as e:
+                    print(f"Error getting REST URL: {e}")
             
-            if recruiter_key not in result['byRecruiter']:
-                result['byRecruiter'][recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'submissions': 0,
-                    'presented': 0,
-                    'placed': 0,
-                    'statusCounts': {}
-                }
+            # Save tokens
+            tokens = {
+                'access_token': access_token,
+                'refresh_token': data.get('refresh_token'),
+                'rest_url': rest_url,
+                'expires_in': data.get('expires_in')
+            }
+            save_tokens(tokens)
             
-            result['byRecruiter'][recruiter_key]['placed'] += 1
-        
-        result['byRecruiter'] = list(result['byRecruiter'].values())
-        return jsonify(result)
+            if rest_url:
+                return render_template_string(HTML_TEMPLATE, 
+                    tokens=tokens, 
+                    message="✅ OAuth success – tokens saved to token_store.json")
+            else:
+                return render_template_string(HTML_TEMPLATE, 
+                    tokens=tokens, 
+                    message="⚠️ Tokens saved but REST URL not available. You may need to contact Bullhorn support.")
+        else:
+            return render_template_string(HTML_TEMPLATE, 
+                error=True, 
+                message=f"Token exchange failed: {data.get('error_description', data)}")
+    
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message=f"Error: {str(e)}")
 
-@app.route('/api/analytics/recruiters')
-def api_analytics_recruiters():
-    """Get recruiter-level analytics for the month"""
+@app.route('/test')
+def test():
+    """Test API connection - uses auto-login"""
     tokens = load_tokens()
-    if not tokens or not tokens.get('bh_rest_token'):
-        return jsonify({'error': 'Not authenticated'}), 401
     
-    year = request.args.get('year', datetime.now().year, type=int)
-    month = request.args.get('month', datetime.now().month, type=int)
-    
-    # Calculate month date range
-    import calendar
-    start_date = datetime(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    start_ms = int(start_date.timestamp() * 1000)
-    end_ms = int(end_date.timestamp() * 1000)
+    if not tokens or not tokens.get('access_token'):
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message="No tokens found. Please authenticate first.")
     
     try:
-        submissions = fetch_job_submissions(start_ms, end_ms, include_recruiter=True)
-        placements = fetch_placements(start_ms, end_ms, include_recruiter=True)
+        # Use auto-login to ensure valid session
+        bh_rest_token, rest_url = ensure_valid_session()
         
-        if submissions is None or placements is None:
-            return jsonify({'error': 'Failed to fetch data from Bullhorn'}), 500
+        if not bh_rest_token or not rest_url:
+            return render_template_string(HTML_TEMPLATE, 
+                tokens=tokens, 
+                error=True, 
+                message="Failed to establish session. Please try re-authenticating.")
         
-        recruiter_map = {}
+        # Test with the BhRestToken (try as header first, then as param)
+        ping_url = f"{rest_url}ping"
+        response = requests.get(
+            ping_url,
+            headers={'BhRestToken': bh_rest_token}
+        )
         
-        # Process submissions
-        for sub in submissions:
-            recruiter_id = get_recruiter_id(sub)
-            recruiter_name = get_recruiter_name(sub)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
-            
-            if recruiter_key not in recruiter_map:
-                recruiter_map[recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'totalSubmissions': 0,
-                    'totalPlacements': 0,
-                    'statusBreakdown': {}
-                }
-            
-            rec_data = recruiter_map[recruiter_key]
-            rec_data['totalSubmissions'] += 1
-            
-            status = sub.get('status', 'Unknown')
-            rec_data['statusBreakdown'][status] = rec_data['statusBreakdown'].get(status, 0) + 1
+        # If header approach fails, try as query parameter
+        if not response.ok:
+            response = requests.get(
+                ping_url,
+                params={'BhRestToken': bh_rest_token}
+            )
         
-        # Process placements
-        for place in placements:
-            recruiter_id = get_recruiter_id(place)
-            recruiter_name = get_recruiter_name(place)
-            recruiter_key = f"{recruiter_id}_{recruiter_name}"
-            
-            if recruiter_key not in recruiter_map:
-                recruiter_map[recruiter_key] = {
-                    'recruiterId': recruiter_id,
-                    'name': recruiter_name,
-                    'totalSubmissions': 0,
-                    'totalPlacements': 0,
-                    'statusBreakdown': {}
-                }
-            
-            recruiter_map[recruiter_key]['totalPlacements'] += 1
+        data = response.json()
         
-        result = list(recruiter_map.values())
-        result.sort(key=lambda x: x['totalSubmissions'], reverse=True)
-        
-        return jsonify({
-            'year': year,
-            'month': month,
-            'recruiters': result
-        })
+        if response.ok:
+            expires = datetime.fromtimestamp(data['sessionExpires']/1000).strftime('%Y-%m-%d %H:%M:%S')
+            return render_template_string(HTML_TEMPLATE, 
+                tokens=tokens, 
+                message=f"✅ Connection successful! Session expires: {expires}")
+        else:
+            return render_template_string(HTML_TEMPLATE, 
+                tokens=tokens, 
+                error=True, 
+                message=f"API test failed: {data}")
+    
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error in test route: {e}")
+        return render_template_string(HTML_TEMPLATE, 
+            tokens=tokens, 
+            error=True, 
+            message=f"Error: {str(e)}")
+
+@app.route('/logout')
+def logout():
+    """Clear tokens"""
+    try:
+        if os.path.exists(TOKEN_FILE):
+            os.remove(TOKEN_FILE)
+        return render_template_string(HTML_TEMPLATE, 
+            message="Tokens cleared successfully")
+    except Exception as e:
+        return render_template_string(HTML_TEMPLATE, 
+            error=True, 
+            message=f"Error clearing tokens: {str(e)}")
+
+@app.route('/api/tokens')
+def api_tokens():
+    """API endpoint to get current tokens"""
+    tokens = load_tokens()
+    if tokens:
+        return jsonify(tokens)
+    return jsonify({'error': 'No tokens found'}), 404
+
+# Schedule background jobs
+def schedule_background_jobs():
+    """Schedule periodic background tasks"""
+    # Schedule token refresh check
+    scheduler.add_job(
+        func=refresh_tokens_if_needed,
+        trigger=IntervalTrigger(minutes=TOKEN_REFRESH_CHECK_INTERVAL),
+        id='token_refresh',
+        name='Refresh tokens if needed',
+        replace_existing=True
+    )
+    logger.info(f"Scheduled token refresh check every {TOKEN_REFRESH_CHECK_INTERVAL} minutes")
+    
+    # Schedule job sync from Bullhorn
+    scheduler.add_job(
+        func=sync_jobs_from_bullhorn,
+        trigger=IntervalTrigger(minutes=JOB_SYNC_INTERVAL),
+        id='job_sync_bullhorn',
+        name='Sync jobs from Bullhorn',
+        replace_existing=True
+    )
+    logger.info(f"Scheduled job sync every {JOB_SYNC_INTERVAL} minutes")
 
 if __name__ == '__main__':
-port = int(os.environ.get('PORT', 10000))
-print(f"Starting Bullhorn OAuth server on port {port}")
-print(f"Auto-refresh enabled: every {REFRESH_INTERVAL_MINUTES} minutes")
-app.run(host='0.0.0.0', port=port, debug=False)
+    # Schedule background jobs
+    schedule_background_jobs()
+    
+    port = int(os.environ.get('PORT', 5000))
+    logger.info(f"Starting Flask app on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
