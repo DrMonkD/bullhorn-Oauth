@@ -544,8 +544,8 @@ ANALYTICS_TEMPLATE = '''
                     <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <span className="text-3xl">📊</span>
-                                <h1 className="text-3xl font-bold text-gray-800">Analytics Dashboard</h1>
+                                <img src="/static/logo.png" alt="" className="h-10 w-auto" />
+                                <h1 className="text-3xl font-bold text-gray-800">Bullhorn Analytics Dashboard</h1>
                             </div>
                             <a href="/" className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
                                 ← Back to OAuth
@@ -564,17 +564,7 @@ ANALYTICS_TEMPLATE = '''
                                             : 'bg-white text-gray-700 hover:bg-gray-100'
                                     }`}
                                 >
-                                    Basic
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('recruiter')}
-                                    className={`px-4 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'recruiter' 
-                                            ? 'bg-indigo-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    Recruiter View
+                                    At a glance
                                 </button>
                                 <button
                                     onClick={() => setViewMode('detailed')}
