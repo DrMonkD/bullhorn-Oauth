@@ -896,42 +896,123 @@ def exchange_for_bh_rest_token(access_token, rest_url=None):
     
     return None, None
 
-def refresh_session():
-    """Background task to refresh BhRestToken"""
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Running token refresh...")
-    
+def access_token_expires_within(minutes=30):
+    """Check if access_token expires within X minutes. Returns True if missing or expiring soon."""
+    tokens = load_tokens()
+    if not tokens:
+        return True
+    exp = tokens.get('access_token_expires_at')
+    if exp is None:
+        return True
+    now = datetime.now().timestamp()
+    return (exp - now) <= (minutes * 60)
+
+def get_bh_rest_token_expiration(rest_url, bh_rest_token):
+    """Call /ping to get BhRestToken expiration. Returns epoch seconds or None."""
+    try:
+        if not rest_url or not bh_rest_token:
+            return None
+        u = rest_url if rest_url.endswith('/') else rest_url + '/'
+        r = requests.get(u + 'ping', params={'BhRestToken': bh_rest_token}, timeout=10)
+        if r.ok:
+            d = r.json()
+            ms = d.get('sessionExpires')
+            if ms is not None:
+                return int(ms / 1000)
+    except Exception as e:
+        print(f"Error getting BhRestToken expiration: {e}")
+    return None
+
+def refresh_oauth_access_token():
+    """Use refresh_token to get new access_token. Returns True on success, False on failure."""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('refresh_token'):
+        print("⚠️ No refresh_token available for OAuth refresh")
+        return False
+    if not CLIENT_ID or not CLIENT_SECRET:
+        print("⚠️ CLIENT_ID or CLIENT_SECRET not set")
+        return False
+    try:
+        r = requests.post(
+            'https://auth.bullhornstaffing.com/oauth/token',
+            data={
+                'grant_type': 'refresh_token',
+                'refresh_token': tokens['refresh_token'],
+                'client_id': CLIENT_ID,
+                'client_secret': CLIENT_SECRET,
+            },
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            timeout=15,
+        )
+        data = r.json() if r.text else {}
+        if not r.ok:
+            err = data.get('error', '') or str(data)
+            desc = data.get('error_description', '')
+            if err == 'invalid_grant' or 'refresh' in str(desc).lower() or 'expired' in str(desc).lower():
+                print("REFRESH TOKEN EXPIRED - MANUAL RE-AUTH REQUIRED")
+            else:
+                print(f"OAuth refresh failed: {r.status_code} {err} {desc}")
+            return False
+        at = data.get('access_token')
+        rt = data.get('refresh_token') or tokens.get('refresh_token')
+        if not at:
+            print("OAuth refresh: no access_token in response")
+            return False
+        exp_in = int(data.get('expires_in', 36000))
+        tokens['access_token'] = at
+        tokens['refresh_token'] = rt
+        tokens['access_token_expires_at'] = datetime.now().timestamp() + exp_in
+        if data.get('restUrl'):
+            tokens['rest_url'] = data['restUrl']
+        tokens['last_refresh'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        save_tokens(tokens)
+        print(f"✅ OAuth access_token refreshed; expires in {exp_in}s")
+        return True
+    except Exception as e:
+        print(f"❌ OAuth refresh error: {e}")
+        return False
+
+def maintain_session():
+    """Two-tier token refresh: OAuth access_token + BhRestToken"""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] maintain_session: running...")
     tokens = load_tokens()
     if not tokens or not tokens.get('access_token'):
-        print("⚠️ No tokens to refresh")
+        print("⚠️ No tokens to maintain")
         return
-    
-    try:
-        # Re-exchange access_token for new BhRestToken
-        access_token = tokens.get('access_token')
-        rest_url = tokens.get('rest_url')
-        
-        bh_rest_token, new_rest_url = exchange_for_bh_rest_token(access_token, rest_url)
-        
-        if bh_rest_token:
-            tokens['bh_rest_token'] = bh_rest_token
-            if new_rest_url:
-                tokens['rest_url'] = new_rest_url
-            tokens['last_refresh'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            save_tokens(tokens)
-            print(f"✅ Session refreshed successfully at {tokens['last_refresh']}")
-        else:
-            print("⚠️ Failed to refresh BhRestToken")
-    except Exception as e:
-        print(f"❌ Refresh error: {e}")
+    # Step 1: Refresh OAuth access_token if it expires within 30 minutes
+    if access_token_expires_within(minutes=30):
+        ok = refresh_oauth_access_token()
+        if not ok:
+            print("⚠️ OAuth refresh failed; skipping BhRestToken refresh")
+            return
+        tokens = load_tokens()
+    # Step 2: Re-exchange access_token for BhRestToken and get expiration from ping
+    at = tokens.get('access_token')
+    rest_url = tokens.get('rest_url')
+    bh, new_rest = exchange_for_bh_rest_token(at, rest_url)
+    if not bh:
+        print("⚠️ Failed to obtain BhRestToken")
+        return
+    tokens['bh_rest_token'] = bh
+    if new_rest:
+        tokens['rest_url'] = new_rest
+        rest_url = new_rest
+    # Get BhRestToken expiration from ping
+    exp = get_bh_rest_token_expiration(rest_url or tokens.get('rest_url'), bh)
+    if exp is not None:
+        tokens['bh_rest_token_expires_at'] = exp
+    tokens['last_refresh'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    save_tokens(tokens)
+    print(f"✅ maintain_session: BhRestToken refreshed at {tokens['last_refresh']}")
 
-# Schedule auto-refresh
+# Schedule two-tier token maintenance (OAuth + BhRestToken)
 scheduler.add_job(
-    func=refresh_session,
+    func=maintain_session,
     trigger="interval",
     minutes=REFRESH_INTERVAL_MINUTES,
-    id='token_refresh',
-    name='Refresh BhRestToken',
-    replace_existing=True
+    id='token_maintenance',
+    name='Maintain OAuth and BhRestToken',
+    replace_existing=True,
 )
 
 @app.route('/')
@@ -1008,14 +1089,21 @@ def callback():
         if new_rest_url:
             rest_url = new_rest_url
         
-        # Step 3: Save everything
+        # Step 3: Compute expiration timestamps
+        expires_in = int(data.get('expires_in') or 36000)
+        access_token_expires_at = datetime.now().timestamp() + expires_in
+        bh_rest_token_expires_at = get_bh_rest_token_expiration(rest_url, bh_rest_token) if bh_rest_token else None
+        
+        # Step 4: Save everything
         tokens = {
             'access_token': access_token,
             'refresh_token': refresh_token,
+            'access_token_expires_at': access_token_expires_at,
             'rest_url': rest_url,
             'bh_rest_token': bh_rest_token,
+            'bh_rest_token_expires_at': bh_rest_token_expires_at,
             'expires_in': data.get('expires_in'),
-            'last_refresh': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'last_refresh': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         save_tokens(tokens)
         
@@ -1082,6 +1170,8 @@ def test():
         if response.ok:
             data = response.json()
             expires = datetime.fromtimestamp(data['sessionExpires']/1000).strftime('%Y-%m-%d %H:%M:%S')
+            tokens['bh_rest_token_expires_at'] = int(data['sessionExpires'] / 1000)
+            save_tokens(tokens)
             return render_template_string(HTML_TEMPLATE, 
                 tokens=tokens,
                 session_status="Active",
@@ -1310,8 +1400,8 @@ def api_status():
 
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
-    """Manually trigger token refresh"""
-    refresh_session()
+    """Manually trigger two-tier token maintenance"""
+    maintain_session()
     tokens = load_tokens()
     
     if tokens and tokens.get('bh_rest_token'):
