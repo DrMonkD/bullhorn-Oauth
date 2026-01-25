@@ -189,10 +189,10 @@ ANALYTICS_TEMPLATE = '''
                 return function() { if (chartRef.current) chartRef.current.destroy(); };
             }, [data, labelsKey]);
             
-            if (!ChartLib) return <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
+            if (!ChartLib) return <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
             if (!data || data.length === 0) return null;
             return (
-                <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                     {title && <h3 className="text-base font-medium text-slate-800 mb-4">{title}</h3>}
                     <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
@@ -546,27 +546,78 @@ ANALYTICS_TEMPLATE = '''
             
             return (
                 <div className="max-w-7xl mx-auto">
-                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+                    <div className="bg-white rounded-lg shadow-sm border-2 border-slate-200 p-6 mb-6">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
                                 <img src="{{ logo_url }}" alt="Concord" className="h-10 w-auto" />
                                 <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Bullhorn Analytics Dashboard</h1>
                             </div>
-                            <a href="/" className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium">
-                                Back to OAuth
-                            </a>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                                <a href="/" className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium">
+                                    Back to OAuth
+                                </a>
+                                <button
+                                    onClick={() => { if (viewMode === 'basic') fetchBasicData(); else fetchAnalyticsData(); }}
+                                    className="px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+                                >
+                                    Refresh
+                                </button>
+                                {(viewMode === 'basic' || (viewMode === 'detailed' && detailedSubmissions.length > 0) || (viewMode === 'detailed_placements' && detailedPlacements.length > 0)) && (
+                                    <button
+                                        onClick={() => {
+                                            if (viewMode === 'basic') {
+                                                var rows = [['Week', 'Submissions', 'Placements', 'Booked', 'Cancelled']];
+                                                chartData.forEach(function(d){ rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0), String(d.cancelled || 0)]); });
+                                                var csv = rows.map(function(row){ return row.join(','); }).join('\\n');
+                                                var blob = new Blob([csv], { type: 'text/csv' });
+                                                var url = window.URL.createObjectURL(blob);
+                                                var a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = 'analytics_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                            } else if (viewMode === 'detailed') {
+                                                var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
+                                                filteredDetailed.forEach(function(s){ rows.push([String(s.id || ''), s.dateFormatted || '', s.candidateName || '', s.jobTitle || '', s.clientName || '', s.status || '', s.ownerName || '']); });
+                                                var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                var blob = new Blob([csv], { type: 'text/csv' });
+                                                var url = window.URL.createObjectURL(blob);
+                                                var a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = 'detailed_submissions_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                            } else if (viewMode === 'detailed_placements') {
+                                                var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
+                                                filteredDetailedPlacements.forEach(function(p){ rows.push([String(p.id || ''), p.dateFormatted || '', p.candidateName || '', p.jobTitle || '', p.clientName || '', p.status || '', p.ownerName || '']); });
+                                                var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                var blob = new Blob([csv], { type: 'text/csv' });
+                                                var url = window.URL.createObjectURL(blob);
+                                                var a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = 'detailed_placements_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                            }
+                                        }}
+                                        className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
+                                    >
+                                        Export CSV
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         
                         {/* View Mode Toggle */}
-                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-                            <label className="block text-sm font-medium text-slate-700 mb-2">View</label>
-                            <div className="flex gap-2 flex-wrap">
+                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
+                            <label className="block text-sm font-medium text-slate-700 mb-2 text-center">View</label>
+                            <div className="flex gap-2 flex-wrap justify-center items-center">
                                 <button
                                     onClick={() => setViewMode('basic')}
                                     className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'basic' 
                                             ? 'bg-slate-800 text-white' 
-                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
                                     At a glance
@@ -576,7 +627,7 @@ ANALYTICS_TEMPLATE = '''
                                     className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'detailed' 
                                             ? 'bg-slate-800 text-white' 
-                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
                                     Detailed Submissions
@@ -586,7 +637,7 @@ ANALYTICS_TEMPLATE = '''
                                     className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                         viewMode === 'detailed_placements' 
                                             ? 'bg-slate-800 text-white' 
-                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }`}
                                 >
                                     Detailed Placements
@@ -594,8 +645,8 @@ ANALYTICS_TEMPLATE = '''
                             </div>
                         </div>
                         
-                        {/* Date / Period */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-white border border-slate-200 rounded-lg">
+                        {/* Date / Period + Filter by owner (when At a glance) */}
+                        <div className="flex flex-wrap justify-center items-end gap-4 mb-6 p-4 bg-white border-2 border-slate-200 rounded-lg">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Period</label>
                                 <select
@@ -657,42 +708,31 @@ ANALYTICS_TEMPLATE = '''
                                     </div>
                                 </>
                             )}
-                        </div>
-                        
-                        {/* Action Buttons */}
-                        <div className="flex gap-3 mb-6">
-                            <button
-                                onClick={() => {
-                                    if (viewMode === 'basic') fetchBasicData();
-                                    else fetchAnalyticsData();
-                                }}
-                                className="px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-                            >
-                                Refresh
-                            </button>
                             {viewMode === 'basic' && (
-                                <button
-                                    onClick={() => {
-                                        const rows = [['Week', 'Submissions', 'Placements', 'Booked', 'Cancelled']];
-                                        chartData.forEach(d => rows.push([d.name, String(d.submissions), String(d.placements), String(d.booked || 0), String(d.cancelled || 0)]));
-                                        const csv = rows.map(row => row.join(',')).join('\\n');
-                                        const blob = new Blob([csv], { type: 'text/csv' });
-                                        const url = window.URL.createObjectURL(blob);
-                                        const a = document.createElement('a');
-                                        a.href = url;
-                                        a.download = 'analytics_' + dateRange.start + '_' + dateRange.end + '.csv';
-                                        a.click();
-                                        window.URL.revokeObjectURL(url);
-                                    }}
-                                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
-                                >
-                                    Export CSV
-                                </button>
+                                <div className="flex items-end gap-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Filter by owner (submitter)</label>
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                value={filterBasicOwner}
+                                                onChange={(e) => setFilterBasicOwner(e.target.value)}
+                                                className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400 min-w-[180px]"
+                                            >
+                                                <option value="">All</option>
+                                                {basicOwnerList.map(function(o){ return <option key={o.id} value={o.id}>{o.name}</option>; })}
+                                            </select>
+                                            {filterBasicOwner && (
+                                                <button type="button" onClick={() => setFilterBasicOwner('')}
+                                                    className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             )}
                         </div>
                         
                         {error && (
-                            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <div className="mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
                                 <p className="text-red-800 text-sm">Error: {error}</p>
                             </div>
                         )}
@@ -706,49 +746,32 @@ ANALYTICS_TEMPLATE = '''
                             <>
                                 {viewMode === 'basic' && (
                                     <>
-                                        {/* Basic View - Owner filter (submitter). Booked/placements use (candidate, job): one candidate to multiple jobs = separate books. */}
-                                        <div className="mb-4 p-4 bg-white border border-slate-200 rounded-lg">
-                                            <div className="flex flex-wrap items-center gap-3">
-                                                <span className="text-sm font-medium text-slate-700">Filter by owner (submitter)</span>
-                                                <select
-                                                    value={filterBasicOwner}
-                                                    onChange={(e) => setFilterBasicOwner(e.target.value)}
-                                                    className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400 min-w-[180px]"
-                                                >
-                                                    <option value="">All</option>
-                                                    {basicOwnerList.map(function(o){ return <option key={o.id} value={o.id}>{o.name}</option>; })}
-                                                </select>
-                                                {filterBasicOwner && (
-                                                    <button type="button" onClick={() => setFilterBasicOwner('')}
-                                                        className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
-                                                )}
-                                            </div>
-                                        </div>
-                                        {/* Basic View - Stats & Chart */}
+                                        {/* Basic View - Stats & Chart (same box style as Detailed) */}
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Total Submissions</div>
                                                 <div className="text-2xl font-semibold text-slate-900">{stats.totalSubmissions}</div>
                                             </div>
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Total Placements</div>
                                                 <div className="text-2xl font-semibold text-slate-900">{stats.totalPlacements}</div>
                                             </div>
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Booked</div>
                                                 <div className="text-2xl font-semibold text-slate-900">{stats.totalBooked}</div>
                                             </div>
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Booked / Submitted</div>
                                                 <div className={`text-2xl font-semibold ${getConversionColor(stats.conversionRate)}`}>
                                                     {stats.conversionRate}%
                                                 </div>
                                             </div>
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Cancelled</div>
                                                 <div className="text-2xl font-semibold text-slate-900">{stats.totalCancelled}</div>
                                             </div>
-                                            <div className="bg-white border border-slate-200 rounded-lg p-4">
+                                            <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
                                                 <div className="text-sm text-slate-500 mb-1">Cancelled / (Booked+Cancelled)</div>
                                                 <div className="text-2xl font-semibold flex justify-between items-baseline gap-2">
                                                     <span className="text-slate-900">{stats.totalCancelled}/{stats.totalEverBooked}</span>
@@ -777,7 +800,7 @@ ANALYTICS_TEMPLATE = '''
                                         </div>
                                             </div>
                                             <aside className="lg:w-80 flex-shrink-0">
-                                                <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-lg text-sm text-slate-600">
+                                                <div className="p-4 bg-slate-50/80 border-2 border-slate-200 rounded-lg text-sm text-slate-600">
                                                     <h4 className="font-medium text-slate-800 mb-3">How we calculate</h4>
                                                     <ul className="space-y-2 list-none">
                                                         <li><strong>Submissions:</strong> In selected date range. With owner: only that owner (submitter).</li>
@@ -790,15 +813,16 @@ ANALYTICS_TEMPLATE = '''
                                                 </div>
                                             </aside>
                                         </div>
+                                        </div>
                                     </>
                                 )}
                                 
                                 {viewMode === 'recruiter' && (
                                     <>
                                         {/* Recruiter Leaderboard */}
-                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
                                             <h3 className="text-base font-semibold text-slate-800 mb-4">Recruiter Leaderboard</h3>
-                                            <div className="overflow-x-auto bg-white border border-slate-200 rounded-lg">
+                                            <div className="overflow-x-auto bg-white border-2 border-slate-200 rounded-lg">
                                                 <table className="w-full">
                                                     <thead>
                                                         <tr className="border-b border-slate-200 bg-slate-50">
@@ -840,7 +864,7 @@ ANALYTICS_TEMPLATE = '''
                                 {viewMode === 'detailed' && (
                                     <>
                                         {/* Detailed Submissions Table */}
-                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
                                             <div className="flex items-center justify-between flex-wrap gap-4">
                                                 <div>
                                                     <h3 className="text-base font-semibold text-slate-800">Detailed Submissions</h3>
@@ -867,7 +891,7 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         
-                                        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6">
+                                        <div className="bg-white border-2 border-slate-200 rounded-lg p-4 mb-6">
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead>
@@ -922,36 +946,13 @@ ANALYTICS_TEMPLATE = '''
                                                 </table>
                                             </div>
                                         </div>
-                                        
-                                        {/* Export CSV for detailed (exports filtered rows) */}
-                                        {detailedSubmissions.length > 0 && (
-                                            <button
-                                                onClick={() => {
-                                                    var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
-                                                    filteredDetailed.forEach(function(s){
-                                                        rows.push([String(s.id || ''), s.dateFormatted || '', s.candidateName || '', s.jobTitle || '', s.clientName || '', s.status || '', s.ownerName || '']);
-                                                    });
-                                                    var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
-                                                    var blob = new Blob([csv], { type: 'text/csv' });
-                                                    var url = window.URL.createObjectURL(blob);
-                                                    var a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = 'detailed_submissions_' + dateRange.start + '_' + dateRange.end + '.csv';
-                                                    a.click();
-                                                    window.URL.revokeObjectURL(url);
-                                                }}
-                                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
-                                            >
-                                                Export CSV
-                                            </button>
-                                        )}
                                     </>
                                 )}
                                 
                                 {viewMode === 'detailed_placements' && (
                                     <>
                                         {/* Detailed Placements Table */}
-                                        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
                                             <div className="flex items-center justify-between flex-wrap gap-4">
                                                 <div>
                                                     <h3 className="text-base font-semibold text-slate-800">Detailed Placements</h3>
@@ -978,7 +979,7 @@ ANALYTICS_TEMPLATE = '''
                                             </div>
                                         </div>
                                         
-                                        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6">
+                                        <div className="bg-white border-2 border-slate-200 rounded-lg p-4 mb-6">
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-sm">
                                                     <thead>
@@ -1030,40 +1031,18 @@ ANALYTICS_TEMPLATE = '''
                                                 </table>
                                             </div>
                                         </div>
-                                        
-                                        {detailedPlacements.length > 0 && (
-                                            <button
-                                                onClick={() => {
-                                                    var rows = [['ID', 'Date', 'Candidate', 'Job Title', 'Client', 'Status', 'Owner']];
-                                                    filteredDetailedPlacements.forEach(function(p){
-                                                        rows.push([String(p.id || ''), p.dateFormatted || '', p.candidateName || '', p.jobTitle || '', p.clientName || '', p.status || '', p.ownerName || '']);
-                                                    });
-                                                    var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
-                                                    var blob = new Blob([csv], { type: 'text/csv' });
-                                                    var url = window.URL.createObjectURL(blob);
-                                                    var a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = 'detailed_placements_' + dateRange.start + '_' + dateRange.end + '.csv';
-                                                    a.click();
-                                                    window.URL.revokeObjectURL(url);
-                                                }}
-                                                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
-                                            >
-                                                Export CSV
-                                            </button>
-                                        )}
                                     </>
                                 )}
                                 
                                 {/* Explore API - show in all views */}
-                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                                <div className="bg-slate-50 border-2 border-slate-200 rounded-lg p-4">
                                     <h3 className="text-sm font-medium text-slate-800 mb-2">Explore API</h3>
                                     <div className="flex flex-wrap gap-2">
-                                        <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">JobSubmission meta</a>
-                                        <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placement meta</a>
-                                        <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Submissions (raw)</a>
-                                        <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placements (raw)</a>
-                                        <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Recruiters (raw)</a>
+                                        <a href="/api/meta/JobSubmission" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">JobSubmission meta</a>
+                                        <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placement meta</a>
+                                        <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Submissions (raw)</a>
+                                        <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placements (raw)</a>
+                                        <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Recruiters (raw)</a>
                                     </div>
                                 </div>
                             </>
@@ -1082,12 +1061,12 @@ ANALYTICS_TEMPLATE = '''
             }
             
             if (typeof React === 'undefined') {
-                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: React is not loaded</p></div>';
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: React is not loaded</p></div>';
                 return;
             }
             
             if (typeof ReactDOM === 'undefined') {
-                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: ReactDOM is not loaded</p></div>';
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: ReactDOM is not loaded</p></div>';
                 return;
             }
             
@@ -1101,7 +1080,7 @@ ANALYTICS_TEMPLATE = '''
                 console.log('Component rendered successfully');
             } catch (err) {
                 console.error('Render error:', err);
-                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error rendering component</p><p class="text-red-500 text-sm mt-2">' + err.message + '</p></div>';
+                rootEl.innerHTML = '<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error rendering component</p><p class="text-red-500 text-sm mt-2">' + err.message + '</p></div>';
             }
         }
         
