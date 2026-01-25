@@ -5,7 +5,6 @@ import os
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
-import time
 
 app = Flask(__name__)
 
@@ -161,9 +160,8 @@ ANALYTICS_TEMPLATE = '''
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         
-        // Bar or Line chart via Chart.js (works from CDN). chartType: 'bar'|'line'. Pass onChartTypeChange to show Bar/Line toggle.
-        function BarChartCanvas({ data, labelsKey, datasets, title, height, chartType, onChartTypeChange }) {
-            var type = (chartType === 'line') ? 'line' : 'bar';
+        // Bar chart via Chart.js (works from CDN)
+        function BarChartCanvas({ data, labelsKey, datasets, title, height }) {
             const canvasRef = useRef(null);
             const chartRef = useRef(null);
             const ChartLib = typeof window !== 'undefined' ? window.Chart : (typeof Chart !== 'undefined' ? Chart : null);
@@ -173,18 +171,13 @@ ANALYTICS_TEMPLATE = '''
                 var ctx = canvasRef.current && canvasRef.current.getContext('2d');
                 if (!ctx) return;
                 if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-                var buildDs = function(ds) {
-                    var d = data.map(function(x) { return x[ds.dataKey] || 0; });
-                    if (type === 'line') {
-                        return { label: ds.label, data: d, borderColor: ds.color, backgroundColor: 'transparent', fill: false, borderWidth: 2, tension: 0.3, pointRadius: 3, pointHoverRadius: 5 };
-                    }
-                    return { label: ds.label, data: d, backgroundColor: ds.color };
-                };
                 chartRef.current = new ChartLib(ctx, {
-                    type: type,
+                    type: 'bar',
                     data: {
                         labels: data.map(function(d) { return d[labelsKey]; }),
-                        datasets: datasets.map(buildDs)
+                        datasets: datasets.map(function(ds) {
+                            return { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }), backgroundColor: ds.color };
+                        })
                     },
                     options: {
                         responsive: true,
@@ -194,27 +187,13 @@ ANALYTICS_TEMPLATE = '''
                     }
                 });
                 return function() { if (chartRef.current) chartRef.current.destroy(); };
-            }, [data, labelsKey, type]);
+            }, [data, labelsKey]);
             
             if (!ChartLib) return <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
             if (!data || data.length === 0) return null;
-            var header = null;
-            if (title || onChartTypeChange) {
-                header = (
-                    <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-                        {title && <h3 className="text-base font-medium text-slate-800">{title}</h3>}
-                        {typeof onChartTypeChange === 'function' && (
-                            <div className="flex gap-2">
-                                <button type="button" onClick={function(){ onChartTypeChange('bar'); }} className={"px-3 py-1.5 rounded-md text-sm font-medium transition-colors " + (type === 'bar' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50')}>Bar</button>
-                                <button type="button" onClick={function(){ onChartTypeChange('line'); }} className={"px-3 py-1.5 rounded-md text-sm font-medium transition-colors " + (type === 'line' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50')}>Line</button>
-                            </div>
-                        )}
-                    </div>
-                );
-            }
             return (
                 <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
-                    {header}
+                    {title && <h3 className="text-base font-medium text-slate-800 mb-4">{title}</h3>}
                     <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
                     </div>
@@ -245,9 +224,6 @@ ANALYTICS_TEMPLATE = '''
             
             // Basic view: filter by submission owner (submitter)
             const [filterBasicOwner, setFilterBasicOwner] = useState('');
-            
-            // Chart type: 'bar' | 'line'
-            const [chartType, setChartType] = useState('bar');
             
             // Analytics data
             const [recruitersData, setRecruitersData] = useState([]);
@@ -820,8 +796,6 @@ ANALYTICS_TEMPLATE = '''
                                                 ]}
                                                 title="Submissions, Placements, Booked & Cancelled by Week"
                                                 height={300}
-                                                chartType={chartType}
-                                                onChartTypeChange={function(t){ setChartType(t); }}
                                             />
                                         </div>
                                             </div>
@@ -1321,27 +1295,12 @@ def login():
             error=True, 
             message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
     
-    state_val = 'oauth'
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}&state={state_val}"
-    # #region agent log
-    try:
-        with open(r'c:\Users\octav\BHAnalytic\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({"location":"app(1).py:login","message":"login before redirect","data":{"state_in_url": "state=" in auth_url, "redirect_uri": REDIRECT_URI, "redirect_uri_is_none": REDIRECT_URI is None, "client_id_empty": not bool(CLIENT_ID), "auth_url_len": len(auth_url)}, "timestamp": int(time.time()*1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "H1"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
     return redirect(auth_url)
 
 @app.route('/oauth/callback')
 def callback():
     """Handle OAuth callback - AUTOMATICALLY exchanges for BhRestToken"""
-    # #region agent log
-    try:
-        with open(r'c:\Users\octav\BHAnalytic\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({"location":"app(1).py:callback","message":"callback entry","data":{"args_keys": list(request.args.keys()), "error": request.args.get('error'), "error_description": request.args.get('error_description'), "state": request.args.get('state'), "code_present": "code" in request.args}, "timestamp": int(time.time()*1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "H3"}) + '\n')
-    except Exception:
-        pass
-    # #endregion
     code = request.args.get('code')
     error = request.args.get('error')
     
