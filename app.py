@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+import time
 
 app = Flask(__name__)
 
@@ -1320,12 +1321,27 @@ def login():
             error=True, 
             message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
     
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    state_val = 'oauth'
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}&state={state_val}"
+    # #region agent log
+    try:
+        with open(r'c:\Users\octav\BHAnalytic\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({"location":"app(1).py:login","message":"login before redirect","data":{"state_in_url": "state=" in auth_url, "redirect_uri": REDIRECT_URI, "redirect_uri_is_none": REDIRECT_URI is None, "client_id_empty": not bool(CLIENT_ID), "auth_url_len": len(auth_url)}, "timestamp": int(time.time()*1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "H1"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
     return redirect(auth_url)
 
 @app.route('/oauth/callback')
 def callback():
     """Handle OAuth callback - AUTOMATICALLY exchanges for BhRestToken"""
+    # #region agent log
+    try:
+        with open(r'c:\Users\octav\BHAnalytic\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({"location":"app(1).py:callback","message":"callback entry","data":{"args_keys": list(request.args.keys()), "error": request.args.get('error'), "error_description": request.args.get('error_description'), "state": request.args.get('state'), "code_present": "code" in request.args}, "timestamp": int(time.time()*1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "H3"}) + '\n')
+    except Exception:
+        pass
+    # #endregion
     code = request.args.get('code')
     error = request.args.get('error')
     
