@@ -1556,11 +1556,28 @@ def login():
             message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
     
     auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}"
+    # #region agent log
+    try:
+        _log = {"location": "app(1).py:login", "message": "OAuth login redirect", "data": {"client_id_truthy": bool(CLIENT_ID), "redirect_uri_truthy": bool(REDIRECT_URI), "redirect_uri_len": len(REDIRECT_URI) if REDIRECT_URI else 0, "auth_url_has_state": "state=" in auth_url, "auth_url_len": len(auth_url)}, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "H1,H4"}
+        with open(r"c:\Users\octav\BHAnalytic\.cursor\debug.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps(_log) + "\n")
+    except Exception:
+        pass
+    # #endregion
     return redirect(auth_url)
 
 @app.route('/oauth/callback')
 def callback():
     """Handle OAuth callback - AUTOMATICALLY exchanges for BhRestToken"""
+    # #region agent log
+    try:
+        _a = request.args
+        _log = {"location": "app(1).py:callback", "message": "OAuth callback entry", "data": {"arg_keys": list(_a.keys()), "has_code": "code" in _a, "has_error": "error" in _a, "has_state": "state" in _a, "error_val": _a.get("error") if "error" in _a else None, "error_desc_len": len(_a.get("error_description") or "") if "error_description" in _a else 0}, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "H3,H5"}
+        with open(r"c:\Users\octav\BHAnalytic\.cursor\debug.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps(_log) + "\n")
+    except Exception:
+        pass
+    # #endregion
     code = request.args.get('code')
     error = request.args.get('error')
     
