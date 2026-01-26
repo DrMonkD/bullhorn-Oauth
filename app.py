@@ -22,6 +22,7 @@ LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', os.environ.get('SUPABASE_KEY', ''))  # Support both names
 supabase: Client = None
+SUPABASE_KEY = SUPABASE_KEY.strip()
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         # Initialize Supabase client without proxy to avoid version compatibility issues
