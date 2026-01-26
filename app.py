@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+from supabase import create_client, Client
 
 app = Flask(__name__)
 
@@ -16,6 +17,17 @@ TOKEN_FILE = 'token_store.json'
 
 # Logo: set LOGO_URL to override; default uses Concord Icon from bullhorn-Oauth repo
 LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD/bullhorn-Oauth/main/Concord%20Icon.png')
+
+# Supabase configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase client initialized")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize Supabase client: {e}")
 
 # Auto-refresh configuration
 REFRESH_INTERVAL_MINUTES = 5  # Refresh every 5 minutes
@@ -1296,6 +1308,86 @@ def save_tokens(tokens):
         print(f"Error saving tokens: {e}")
         return False
 
+def sync_bullhorn_jobs():
+    """Fetch open jobs from Bullhorn API and upsert into Supabase open_jobs table"""
+    if not supabase:
+        print("⚠️ Supabase client not initialized. Skipping job sync.")
+        return
+    
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        print("⚠️ No valid Bullhorn session. Skipping job sync.")
+        return
+    
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        
+        url = f"{rest_url}query/JobOrder"
+        
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': 'isOpen=true AND isDeleted=false',
+            'fields': 'id,title,status,isOpen,dateAdded,employmentType,salary,numOpenings,clientCorporation(id,name),owner(id,firstName,lastName)',
+            'count': 500
+        }
+        
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        
+        jobs = data.get('data', [])
+        print(f"📥 Fetched {len(jobs)} open jobs from Bullhorn")
+        
+        if not jobs:
+            print("ℹ️ No open jobs to sync")
+            return
+        
+        # Map Bullhorn API response to SQL schema
+        synced_at = datetime.now().isoformat()
+        upsert_data = []
+        
+        for job in jobs:
+            owner = (job.get('owner') or {})
+            client = (job.get('clientCorporation') or {})
+            date_added_ms = job.get('dateAdded')
+            date_added = None
+            if date_added_ms:
+                date_added = datetime.fromtimestamp(date_added_ms / 1000).isoformat()
+            
+            owner_name = f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or None
+            
+            row = {
+                'bullhorn_id': job.get('id'),
+                'title': job.get('title', 'Unknown'),
+                'status': job.get('status', 'Unknown'),
+                'client_id': client.get('id'),
+                'client_name': client.get('name'),
+                'owner_id': owner.get('id'),
+                'owner_name': owner_name,
+                'employment_type': job.get('employmentType'),
+                'salary': job.get('salary'),
+                'start_date': None,  # Not in API response
+                'num_openings': job.get('numOpenings'),
+                'is_open': job.get('isOpen', True),
+                'date_added': date_added,
+                'synced_at': synced_at,
+                'updated_at': synced_at
+            }
+            upsert_data.append(row)
+        
+        # Bulk upsert to Supabase
+        result = supabase.table('open_jobs').upsert(
+            upsert_data,
+            on_conflict='bullhorn_id'
+        ).execute()
+        
+        print(f"✅ Synced {len(upsert_data)} jobs to Supabase (upserted/updated)")
+        
+    except Exception as e:
+        print(f"❌ Error syncing Bullhorn jobs: {e}")
+
 def exchange_for_bh_rest_token(access_token, rest_url=None):
     """Exchange OAuth access token for BhRestToken"""
     login_urls = []
@@ -1448,6 +1540,20 @@ scheduler.add_job(
     name='Maintain OAuth and BhRestToken',
     replace_existing=True,
 )
+
+# Schedule Bullhorn jobs sync to Supabase (every 60 minutes)
+if supabase:
+    scheduler.add_job(
+        func=sync_bullhorn_jobs,
+        trigger="interval",
+        minutes=60,
+        id='sync_bullhorn_jobs',
+        name='Sync Bullhorn open jobs to Supabase',
+        replace_existing=True,
+    )
+    print("✅ Scheduled Bullhorn jobs sync: every 60 minutes")
+else:
+    print("⚠️ Supabase not configured. Job sync scheduler not started.")
 
 @app.route('/')
 def home():
