@@ -77,6 +77,9 @@ HTML_TEMPLATE = '''
                     <span>📊</span>
                     Analytics Dashboard
                 </a>
+                <a href="/analytics?view=jobs" class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2">
+                    Jobs Dashboard
+                </a>
                 <a href="/test" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                     Test Connection
                 </a>
@@ -107,6 +110,7 @@ HTML_TEMPLATE = '''
                     <div class="bg-white p-2 rounded">GET /api/submissions/detailed?year=YYYY&month=M - Fetch submissions with full details (candidate, job, client, owner)</div>
                     <div class="bg-white p-2 rounded">GET /api/placements?year=YYYY&month=M - Fetch placements (minimal fields)</div>
                     <div class="bg-white p-2 rounded">GET /api/placements/detailed?year=YYYY&month=M - Fetch placements with full details (candidate, job, client, owner)</div>
+                    <div class="bg-white p-2 rounded">GET /api/jobs/detailed?start=YYYY-MM-DD&end=YYYY-MM-DD - Fetch JobOrder records (title, status, client, owner)</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/weekly?year=YYYY&month=M - Weekly analytics with recruiter breakdown</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/monthly?year=YYYY&month=M - Monthly analytics with recruiter breakdown</div>
                     <div class="bg-white p-2 rounded">GET /api/analytics/recruiters?year=YYYY&month=M - Recruiter leaderboard</div>
@@ -160,10 +164,11 @@ ANALYTICS_TEMPLATE = '''
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         
-        // Bar chart via Chart.js (works from CDN)
+        // Bar chart via Chart.js (works from CDN); supports bar/line toggle
         function BarChartCanvas({ data, labelsKey, datasets, title, height }) {
             const canvasRef = useRef(null);
             const chartRef = useRef(null);
+            const [chartType, setChartType] = useState('bar');
             const ChartLib = typeof window !== 'undefined' ? window.Chart : (typeof Chart !== 'undefined' ? Chart : null);
             
             useEffect(function() {
@@ -171,12 +176,15 @@ ANALYTICS_TEMPLATE = '''
                 var ctx = canvasRef.current && canvasRef.current.getContext('2d');
                 if (!ctx) return;
                 if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+                var isLine = chartType === 'line';
                 chartRef.current = new ChartLib(ctx, {
-                    type: 'bar',
+                    type: isLine ? 'line' : 'bar',
                     data: {
                         labels: data.map(function(d) { return d[labelsKey]; }),
                         datasets: datasets.map(function(ds) {
-                            return { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }), backgroundColor: ds.color };
+                            var base = { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }) };
+                            if (isLine) return Object.assign(base, { borderColor: ds.color, backgroundColor: ds.color, fill: false });
+                            return Object.assign(base, { backgroundColor: ds.color });
                         })
                     },
                     options: {
@@ -187,13 +195,29 @@ ANALYTICS_TEMPLATE = '''
                     }
                 });
                 return function() { if (chartRef.current) chartRef.current.destroy(); };
-            }, [data, labelsKey]);
+            }, [data, labelsKey, chartType]);
             
             if (!ChartLib) return <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
             if (!data || data.length === 0) return null;
             return (
                 <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
-                    {title && <h3 className="text-base font-medium text-slate-800 mb-4">{title}</h3>}
+                    <div className="flex justify-between items-center gap-4 mb-4 flex-wrap">
+                        <div>{title && <h3 className="text-base font-medium text-slate-800">{title}</h3>}</div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setChartType('bar')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${chartType === 'bar' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                Bar
+                            </button>
+                            <button
+                                onClick={() => setChartType('line')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${chartType === 'line' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                Line
+                            </button>
+                        </div>
+                    </div>
                     <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
                     </div>
@@ -207,8 +231,11 @@ ANALYTICS_TEMPLATE = '''
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             
-            // View mode: 'basic', 'recruiter', 'detailed', 'detailed_placements'
-            const [viewMode, setViewMode] = useState('basic');
+            // View mode: 'basic', 'recruiter', 'detailed', 'detailed_placements', 'jobs'
+            const [viewMode, setViewMode] = useState(function(){
+                try { if (typeof window !== 'undefined' && window.location.search.indexOf('view=jobs') >= 0) return 'jobs'; } catch(e) {}
+                return 'basic';
+            });
             
             // Detailed submissions data
             const [detailedSubmissions, setDetailedSubmissions] = useState([]);
@@ -221,6 +248,12 @@ ANALYTICS_TEMPLATE = '''
             const [detailedPlacements, setDetailedPlacements] = useState([]);
             const [filterPlacementOwner, setFilterPlacementOwner] = useState('');
             const [filterPlacementStatus, setFilterPlacementStatus] = useState('');
+            
+            // Detailed jobs data and filters
+            const [detailedJobs, setDetailedJobs] = useState([]);
+            const [filterJobOwner, setFilterJobOwner] = useState('');
+            const [filterJobStatus, setFilterJobStatus] = useState('');
+            const [filterJobOpenClosed, setFilterJobOpenClosed] = useState('');
             
             // Basic view: filter by submission owner (submitter)
             const [filterBasicOwner, setFilterBasicOwner] = useState('');
@@ -350,6 +383,15 @@ ANALYTICS_TEMPLATE = '''
                         } else {
                             const errorText = await res.text();
                             throw new Error('Failed to fetch detailed placements: ' + errorText.substring(0, 100));
+                        }
+                    } else if (viewMode === 'jobs') {
+                        const res = await fetch('/api/jobs/detailed?' + q);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setDetailedJobs(data.data || []);
+                        } else {
+                            const errorText = await res.text();
+                            throw new Error('Failed to fetch detailed jobs: ' + errorText.substring(0, 100));
                         }
                     }
                 } catch (err) {
@@ -544,6 +586,26 @@ ANALYTICS_TEMPLATE = '''
                 return l;
             }, [detailedPlacements, filterPlacementOwner, filterPlacementStatus]);
             
+            const detailedJobsMeta = useMemo(function(){
+                var owners = [], statuses = [];
+                detailedJobs.forEach(function(j){
+                    var o = String(j.ownerName != null ? j.ownerName : '').trim();
+                    var s = String(j.status != null ? j.status : '').trim();
+                    if (o && owners.indexOf(o) < 0) owners.push(o);
+                    if (s && statuses.indexOf(s) < 0) statuses.push(s);
+                });
+                owners.sort(); statuses.sort();
+                return { owners: owners, statuses: statuses };
+            }, [detailedJobs]);
+            const filteredDetailedJobs = useMemo(function(){
+                var l = detailedJobs;
+                if (filterJobOwner) l = l.filter(function(j){ return String(j.ownerName != null ? j.ownerName : '').toLowerCase().indexOf(filterJobOwner.toLowerCase()) >= 0; });
+                if (filterJobStatus) l = l.filter(function(j){ return String(j.status != null ? j.status : '') === filterJobStatus; });
+                if (filterJobOpenClosed === 'open') l = l.filter(function(j){ return j.isOpen === true || j.isOpen === 1; });
+                if (filterJobOpenClosed === 'closed') l = l.filter(function(j){ return j.isOpen === false || j.isOpen === 0; });
+                return l;
+            }, [detailedJobs, filterJobOwner, filterJobStatus, filterJobOpenClosed]);
+            
             return (
                 <div className="max-w-7xl mx-auto">
                     <div className="bg-white rounded-lg shadow-sm border-2 border-slate-200 p-6 mb-6">
@@ -562,7 +624,7 @@ ANALYTICS_TEMPLATE = '''
                                 >
                                     Refresh
                                 </button>
-                                {(viewMode === 'basic' || (viewMode === 'detailed' && detailedSubmissions.length > 0) || (viewMode === 'detailed_placements' && detailedPlacements.length > 0)) && (
+                                {(viewMode === 'basic' || (viewMode === 'detailed' && detailedSubmissions.length > 0) || (viewMode === 'detailed_placements' && detailedPlacements.length > 0) || (viewMode === 'jobs' && detailedJobs.length > 0)) && (
                                     <button
                                         onClick={() => {
                                             if (viewMode === 'basic') {
@@ -596,6 +658,17 @@ ANALYTICS_TEMPLATE = '''
                                                 var a = document.createElement('a');
                                                 a.href = url;
                                                 a.download = 'detailed_placements_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                            } else if (viewMode === 'jobs') {
+                                                var rows = [['ID', 'Date', 'Job Title', 'Client', 'Status', 'Open/Closed', 'Owner']];
+                                                filteredDetailedJobs.forEach(function(j){ rows.push([String(j.id || ''), j.dateFormatted || '', j.title || '', j.clientName || '', j.status || '', (j.isOpen === true || j.isOpen === 1) ? 'Open' : 'Closed', j.ownerName || '']); });
+                                                var csv = rows.map(function(row){ return row.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                var blob = new Blob([csv], { type: 'text/csv' });
+                                                var url = window.URL.createObjectURL(blob);
+                                                var a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = 'jobs_' + dateRange.start + '_' + dateRange.end + '.csv';
                                                 a.click();
                                                 window.URL.revokeObjectURL(url);
                                             }
@@ -641,6 +714,16 @@ ANALYTICS_TEMPLATE = '''
                                     }`}
                                 >
                                     Detailed Placements
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('jobs')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                        viewMode === 'jobs' 
+                                            ? 'bg-slate-800 text-white' 
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    Jobs
                                 </button>
                             </div>
                         </div>
@@ -1034,6 +1117,101 @@ ANALYTICS_TEMPLATE = '''
                                     </>
                                 )}
                                 
+                                {viewMode === 'jobs' && (
+                                    <>
+                                        {/* Detailed Jobs: stats, filters, table */}
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
+                                            <div className="flex items-center justify-between flex-wrap gap-4">
+                                                <div>
+                                                    <h3 className="text-base font-semibold text-slate-800">Detailed Jobs</h3>
+                                                    <p className="text-sm text-slate-600">Job order, client, status, owner</p>
+                                                </div>
+                                                <div className="text-lg font-semibold text-slate-700">{filteredDetailedJobs.length} records</div>
+                                            </div>
+                                            <div className="mt-3 text-sm text-slate-600">
+                                                Total Jobs: {detailedJobs.length} &nbsp;|&nbsp; Open: {detailedJobs.filter(function(j){ return j.isOpen === true || j.isOpen === 1; }).length} &nbsp;|&nbsp; Closed: {detailedJobs.filter(function(j){ return j.isOpen === false || j.isOpen === 0; }).length}
+                                                {(() => {
+                                                    var statusCounts = {};
+                                                    detailedJobs.forEach(function(j){ var s = String(j.status || '').trim() || 'Unknown'; statusCounts[s] = (statusCounts[s]||0)+1; });
+                                                    var top5 = Object.entries(statusCounts).sort(function(a,b){ return b[1]-a[1]; }).slice(0,5);
+                                                    if (top5.length) return <span> &nbsp;|&nbsp; Top: {top5.map(function(x){ return x[0] + ' (' + x[1] + ')'; }).join(', ')}</span>;
+                                                    return null;
+                                                })()}
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap gap-3 items-center">
+                                                <span className="text-sm font-medium text-slate-600">Filters</span>
+                                                <select value={filterJobOwner} onChange={(e) => setFilterJobOwner(e.target.value)}
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
+                                                    <option value="">All owners</option>
+                                                    {detailedJobsMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
+                                                </select>
+                                                <select value={filterJobStatus} onChange={(e) => setFilterJobStatus(e.target.value)}
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
+                                                    <option value="">All statuses</option>
+                                                    {detailedJobsMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+                                                </select>
+                                                <select value={filterJobOpenClosed} onChange={(e) => setFilterJobOpenClosed(e.target.value)}
+                                                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
+                                                    <option value="">All</option>
+                                                    <option value="open">Open Only</option>
+                                                    <option value="closed">Closed Only</option>
+                                                </select>
+                                                {(filterJobOwner || filterJobStatus || filterJobOpenClosed) && (
+                                                    <button type="button" onClick={() => { setFilterJobOwner(''); setFilterJobStatus(''); setFilterJobOpenClosed(''); }}
+                                                        className="text-sm text-slate-600 hover:text-slate-800">Clear</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white border-2 border-slate-200 rounded-lg p-4 mb-6">
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-200 bg-slate-50">
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">ID</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Date</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Job Title</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Client</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Status</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Open/Closed</th>
+                                                            <th className="text-left py-2.5 px-3 font-medium text-slate-700">Owner</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredDetailedJobs.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="7" className="text-center py-12 text-slate-500 text-sm">
+                                                                    {detailedJobs.length === 0 ? 'No jobs for this period' : 'No rows match the filters'}
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            filteredDetailedJobs.map(function(job, idx) {
+                                                                var statusColor = { 'Open': 'bg-green-50 text-green-800', 'Closed': 'bg-slate-100 text-slate-600', 'On Hold': 'bg-yellow-50 text-yellow-800', 'Cancelled': 'bg-red-50 text-red-700' }[job.status] || 'bg-slate-100 text-slate-600';
+                                                                var isOpenVal = job.isOpen === true || job.isOpen === 1;
+                                                                return (
+                                                                    <tr key={job.id || idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                                        <td className="py-2 px-3 text-slate-500 font-mono text-xs">{job.id}</td>
+                                                                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{job.dateFormatted || '—'}</td>
+                                                                        <td className="py-2 px-3 text-slate-800 font-medium max-w-xs truncate" title={job.title}>{job.title}</td>
+                                                                        <td className="py-2 px-3 text-slate-500">{job.clientName}</td>
+                                                                        <td className="py-2 px-3">
+                                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>{job.status}</span>
+                                                                        </td>
+                                                                        <td className="py-2 px-3">
+                                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${isOpenVal ? 'bg-green-100 text-green-800 font-semibold' : 'bg-slate-100 text-slate-600'}`}>{isOpenVal ? 'Open' : 'Closed'}</span>
+                                                                        </td>
+                                                                        <td className="py-2 px-3 text-slate-600">{job.ownerName}</td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                                
                                 {/* Explore API - show in all views */}
                                 <div className="bg-slate-50 border-2 border-slate-200 rounded-lg p-4">
                                     <h3 className="text-sm font-medium text-slate-800 mb-2">Explore API</h3>
@@ -1042,6 +1220,7 @@ ANALYTICS_TEMPLATE = '''
                                         <a href="/api/meta/Placement" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placement meta</a>
                                         <a href={'/api/submissions/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Submissions (raw)</a>
                                         <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placements (raw)</a>
+                                        <a href={'/api/jobs/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Jobs (raw)</a>
                                         <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Recruiters (raw)</a>
                                     </div>
                                 </div>
@@ -1859,6 +2038,69 @@ def api_placements_detailed():
             'data': formatted
         })
     
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/jobs/detailed')
+def api_jobs_detailed():
+    """Fetch detailed JobOrder records. Use start/end (YYYY-MM-DD), or year+month, or year.
+    Bullhorn entity: JobOrder. Endpoint: query/JobOrder. JPQL where with dateAdded in ms."""
+    tokens = load_tokens()
+
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    start_ms, end_ms = parse_date_range_from_request()
+
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+
+        url = f"{rest_url}query/JobOrder"
+
+        fields = 'id,dateAdded,title,status,isOpen,clientCorporation(id,name),owner(id,firstName,lastName)'
+
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+
+        jobs = data.get('data', [])
+
+        formatted = []
+        for job in jobs:
+            owner = (job.get('owner') or {})
+            client = (job.get('clientCorporation') or {})
+            ts = job.get('dateAdded')
+            formatted.append({
+                'id': job.get('id'),
+                'dateAdded': ts,
+                'dateFormatted': datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M') if ts else None,
+                'title': job.get('title', 'Unknown'),
+                'status': job.get('status', 'Unknown'),
+                'isOpen': job.get('isOpen', False),
+                'clientName': client.get('name', 'Unknown'),
+                'ownerId': owner.get('id'),
+                'ownerName': f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or 'Unknown'
+            })
+
+        return jsonify({
+            'success': True,
+            'count': len(formatted),
+            'data': formatted
+        })
+
     except Exception as e:
         return jsonify({
             'success': False,
