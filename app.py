@@ -77,6 +77,10 @@ HTML_TEMPLATE = '''
                     <span>📊</span>
                     Analytics Dashboard
                 </a>
+                <a href="/jobs" class="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors inline-flex items-center gap-2">
+                    <span>💼</span>
+                    Jobs
+                </a>
                 <a href="/test" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                     Test Connection
                 </a>
@@ -1116,6 +1120,237 @@ ANALYTICS_TEMPLATE = '''
 </html>
 '''
 
+JOBS_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jobs Dashboard - Bullhorn</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body{font-family:'Inter',system-ui,-apple-system,sans-serif}</style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen p-6 font-sans antialiased">
+    <div id="root">
+        <div class="p-6 text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-2 border-slate-300 border-t-slate-600"></div>
+            <p class="mt-4 text-slate-600">Loading...</p>
+        </div>
+    </div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function JobsDashboard() {
+            const [jobs, setJobs] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [periodType, setPeriodType] = useState('month');
+            const [year, setYear] = useState(new Date().getFullYear());
+            const [month, setMonth] = useState(new Date().getMonth() + 1);
+            const [weekDate, setWeekDate] = useState(function(){
+                var d = new Date();
+                return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            });
+            const [startDate, setStartDate] = useState(function(){
+                var d = new Date();
+                return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01';
+            });
+            const [endDate, setEndDate] = useState(function(){
+                var d = new Date();
+                var last = new Date(d.getFullYear(), d.getMonth()+1, 0);
+                return last.getFullYear() + '-' + String(last.getMonth()+1).padStart(2,'0') + '-' + String(last.getDate()).padStart(2,'0');
+            });
+            const [filterOwner, setFilterOwner] = useState('');
+            const [filterStatus, setFilterStatus] = useState('');
+            const [filterClient, setFilterClient] = useState('');
+            const [filterEmploymentType, setFilterEmploymentType] = useState('');
+
+            const dateRange = useMemo(function(){
+                function ym(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+                if (periodType === 'week' && weekDate) {
+                    var d = new Date(weekDate + 'T12:00:00');
+                    var day = d.getDay();
+                    var monOff = day === 0 ? -6 : 1 - day;
+                    var mon = new Date(d); mon.setDate(mon.getDate() + monOff);
+                    var sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+                    return { start: ym(mon), end: ym(sun) };
+                }
+                if (periodType === 'month') {
+                    var last = new Date(year, month, 0);
+                    return { start: year+'-'+String(month).padStart(2,'0')+'-01', end: year+'-'+String(month).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0') };
+                }
+                if (periodType === 'year') {
+                    return { start: year+'-01-01', end: year+'-12-31' };
+                }
+                return { start: startDate || '2020-01-01', end: endDate || '2030-12-31' };
+            }, [periodType, year, month, weekDate, startDate, endDate]);
+
+            const jobsMeta = useMemo(function(){
+                var owners = [], statuses = [], clients = [], employmentTypes = [];
+                jobs.forEach(function(j){
+                    var o = (j.ownerName || '').trim(); if (o && owners.indexOf(o) < 0) owners.push(o);
+                    var s = (j.status || '').trim(); if (s && statuses.indexOf(s) < 0) statuses.push(s);
+                    var c = (j.clientName || '').trim(); if (c && clients.indexOf(c) < 0) clients.push(c);
+                    var e = (j.employmentType || '').trim(); if (e && employmentTypes.indexOf(e) < 0) employmentTypes.push(e);
+                });
+                owners.sort(); statuses.sort(); clients.sort(); employmentTypes.sort();
+                return { owners: owners, statuses: statuses, clients: clients, employmentTypes: employmentTypes };
+            }, [jobs]);
+
+            const filteredJobs = useMemo(function(){
+                var list = jobs;
+                if (filterOwner) list = list.filter(function(j){ return String(j.ownerName || '') === filterOwner; });
+                if (filterStatus) list = list.filter(function(j){ return String(j.status || '') === filterStatus; });
+                if (filterClient) list = list.filter(function(j){ return String(j.clientName || '') === filterClient; });
+                if (filterEmploymentType) list = list.filter(function(j){ return String(j.employmentType || '') === filterEmploymentType; });
+                return list;
+            }, [jobs, filterOwner, filterStatus, filterClient, filterEmploymentType]);
+
+            const fetchJobs = async function(){
+                setLoading(true);
+                setError(null);
+                var r = dateRange;
+                var q = 'start=' + encodeURIComponent(r.start) + '&end=' + encodeURIComponent(r.end);
+                try {
+                    var res = await fetch('/api/jobs?' + q);
+                    if (!res.ok) { var t = await res.text(); throw new Error('Jobs API: ' + res.status + ' - ' + (t || '').substring(0, 120)); }
+                    var data = await res.json();
+                    setJobs(data.data || []);
+                } catch (err) {
+                    setError(err.message || 'Failed to fetch jobs');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(function(){ fetchJobs(); }, [dateRange.start, dateRange.end]);
+
+            return (
+                <div className="max-w-7xl mx-auto">
+                    <div className="bg-white rounded-lg shadow-sm border-2 border-slate-200 p-6 mb-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <img src="{{ logo_url }}" alt="Concord" className="h-10 w-auto" />
+                                <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Jobs Dashboard</h1>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                                <a href="/" className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium">Back to OAuth</a>
+                                <button onClick={fetchJobs} className="px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">Refresh</button>
+                                {jobs.length > 0 && (
+                                    <button onClick={function(){
+                                        var rows = [['ID','Date Added','Job Title','Client Name','Status','Owner Name','Employment Type','Salary','# Openings','Is Open']];
+                                        filteredJobs.forEach(function(j){
+                                            rows.push([String(j.id||''), j.dateFormatted||'', j.title||'', j.clientName||'', j.status||'', j.ownerName||'', j.employmentType||'', String(j.salary==null?'':j.salary), String(j.numOpenings==null?'':j.numOpenings), j.isOpen ? 'Yes' : 'No']);
+                                        });
+                                        var csv = rows.map(function(row){ return row.map(function(c){ return '"' + String(c||'').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                        var blob = new Blob([csv], { type: 'text/csv' });
+                                        var url = window.URL.createObjectURL(blob);
+                                        var a = document.createElement('a'); a.href = url; a.download = 'jobs_' + dateRange.start + '_' + dateRange.end + '.csv'; a.click();
+                                        window.URL.revokeObjectURL(url);
+                                    }} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">Export CSV</button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap justify-center items-end gap-4 mb-6 p-4 bg-white border-2 border-slate-200 rounded-lg">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Period</label>
+                                <select value={periodType} onChange={(e) => setPeriodType(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
+                                    <option value="week">Week</option><option value="month">Month</option><option value="year">Year</option><option value="custom">Custom range</option>
+                                </select>
+                            </div>
+                            {periodType === 'week' && <div><label className="block text-sm font-medium text-slate-700 mb-1">Date in week</label><input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" /></div>}
+                            {periodType === 'month' && <><div><label className="block text-sm font-medium text-slate-700 mb-1">Year</label><select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">{[2024,2025,2026,2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}</select></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Month</label><select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">{Array.from({length:12},function(_,i){ var m=i+1; return <option key={m} value={m}>{new Date(2024,m-1).toLocaleString('default',{month:'long'})}</option>; })}</select></div></>}
+                            {periodType === 'year' && <div><label className="block text-sm font-medium text-slate-700 mb-1">Year</label><select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400">{[2024,2025,2026,2027].map(function(y){ return <option key={y} value={y}>{y}</option>; })}</select></div>}
+                            {periodType === 'custom' && <><div><label className="block text-sm font-medium text-slate-700 mb-1">From</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" /></div><div><label className="block text-sm font-medium text-slate-700 mb-1">To</label><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-400 focus:border-slate-400" /></div></>}
+                        </div>
+
+                        {error && <div className="mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-lg"><p className="text-red-800 text-sm">Error: {error}</p></div>}
+
+                        {loading ? (
+                            <div className="text-center py-12"><div className="inline-block animate-spin rounded-full h-12 w-12 border-2 border-slate-200 border-t-slate-600"></div><p className="mt-4 text-slate-600">Loading data...</p></div>
+                        ) : (
+                            <>
+                                <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
+                                    <div className="flex items-center justify-between flex-wrap gap-4">
+                                        <div><h3 className="text-base font-semibold text-slate-800">Jobs</h3><p className="text-sm text-slate-600">Filter by owner, status, client, employment type</p></div>
+                                        <div className="text-lg font-semibold text-slate-700">{filteredJobs.length} records</div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-3 items-center">
+                                        <span className="text-sm font-medium text-slate-600">Filters</span>
+                                        <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)} className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400"><option value="">All owners</option>{jobsMeta.owners.map(function(o){ return <option key={o} value={o}>{o}</option>; })}</select>
+                                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400"><option value="">All statuses</option>{jobsMeta.statuses.map(function(s){ return <option key={s} value={s}>{s}</option>; })}</select>
+                                        <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400"><option value="">All clients</option>{jobsMeta.clients.map(function(c){ return <option key={c} value={c}>{c}</option>; })}</select>
+                                        <select value={filterEmploymentType} onChange={(e) => setFilterEmploymentType(e.target.value)} className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400"><option value="">All employment types</option>{jobsMeta.employmentTypes.map(function(e){ return <option key={e} value={e}>{e}</option>; })}</select>
+                                        {(filterOwner || filterStatus || filterClient || filterEmploymentType) && <button type="button" onClick={function(){ setFilterOwner(''); setFilterStatus(''); setFilterClient(''); setFilterEmploymentType(''); }} className="text-sm text-slate-600 hover:text-slate-800">Clear</button>}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border-2 border-slate-200 rounded-lg p-4 mb-6">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="border-b border-slate-200 bg-slate-50">
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">ID</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Date Added</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Job Title</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Client Name</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Status</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Owner Name</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Employment Type</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Salary</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700"># Openings</th>
+                                                    <th className="text-left py-2.5 px-3 font-medium text-slate-700">Is Open</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredJobs.length === 0 ? (
+                                                    <tr><td colSpan="10" className="text-center py-12 text-slate-500 text-sm">{jobs.length === 0 ? 'No jobs for this period' : 'No rows match the filters'}</td></tr>
+                                                ) : (
+                                                    filteredJobs.map(function(j, idx){
+                                                        var st = (j.status || '').trim();
+                                                        var statusCl = {'Open':'bg-emerald-50 text-emerald-800','Closed':'bg-slate-100 text-slate-600','On Hold':'bg-amber-50 text-amber-800','Archive':'bg-slate-100 text-slate-500'}[st] || 'bg-slate-100 text-slate-600';
+                                                        var isOpen = j.isOpen === true || j.isOpen === 1 || String(j.isOpen).toLowerCase() === 'true' || String(j.isOpen) === '1';
+                                                        return (
+                                                            <tr key={j.id || idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                                <td className="py-2 px-3 text-slate-500 font-mono text-xs">{j.id == null ? '—' : j.id}</td>
+                                                                <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{j.dateFormatted || '—'}</td>
+                                                                <td className="py-2 px-3 text-slate-800 font-medium max-w-xs truncate" title={j.title}>{j.title || '—'}</td>
+                                                                <td className="py-2 px-3 text-slate-600">{j.clientName || '—'}</td>
+                                                                <td className="py-2 px-3"><span className={"px-2 py-0.5 rounded text-xs font-medium " + statusCl}>{j.status || '—'}</span></td>
+                                                                <td className="py-2 px-3 text-slate-600">{j.ownerName || '—'}</td>
+                                                                <td className="py-2 px-3 text-slate-500">{j.employmentType || '—'}</td>
+                                                                <td className="py-2 px-3 text-slate-600">{j.salary != null && j.salary !== '' ? String(j.salary) : '—'}</td>
+                                                                <td className="py-2 px-3 text-slate-600">{j.numOpenings != null && j.numOpenings !== '' ? String(j.numOpenings) : '—'}</td>
+                                                                <td className="py-2 px-3"><span className={isOpen ? "px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-800" : "px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600"}>{isOpen ? 'Yes' : 'No'}</span></td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function initJobs(){ var root=document.getElementById('root'); if(!root) return; if(typeof React==='undefined'){ root.innerHTML='<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: React not loaded</p></div>'; return; } if(typeof ReactDOM==='undefined'){ root.innerHTML='<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: ReactDOM not loaded</p></div>'; return; } try { if(ReactDOM.createRoot) ReactDOM.createRoot(root).render(<JobsDashboard />); else ReactDOM.render(<JobsDashboard />, root); } catch(e){ root.innerHTML='<div class="p-6 text-center bg-red-50 border-2 border-red-200 rounded-lg"><p class="text-red-600 font-semibold">Error: '+e.message+'</p></div>'; } }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initJobs);
+        else setTimeout(initJobs, 100);
+    </script>
+</body>
+</html>
+'''
+
 def load_tokens():
     """Load tokens from file"""
     try:
@@ -1306,6 +1541,11 @@ def home():
 def analytics():
     """Analytics dashboard page"""
     return render_template_string(ANALYTICS_TEMPLATE, logo_url=LOGO_URL)
+
+@app.route('/jobs')
+def jobs():
+    """Jobs dashboard page"""
+    return render_template_string(JOBS_TEMPLATE, logo_url=LOGO_URL)
 
 @app.route('/login')
 def login():
@@ -1884,6 +2124,71 @@ def api_placements_detailed():
             'success': False,
             'error': str(e)
         }), 500
+
+def _fetch_jobs_formatted(start_ms, end_ms):
+    """Query JobOrder and return formatted list. Used by /api/jobs and /api/jobs/detailed."""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return None, 'Not authenticated'
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        url = f"{rest_url}query/JobOrder"
+        fields = 'id,dateAdded,title,status,clientCorporation(id,name),owner(id,firstName,lastName),employmentType,salary,startDate,isOpen,numOpenings'
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': fields,
+            'orderBy': '-dateAdded',
+            'count': 500
+        }
+        response = requests.get(url, params=params, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        raw = data.get('data', [])
+        formatted = []
+        for j in raw:
+            client = j.get('clientCorporation', {}) or {}
+            owner = j.get('owner', {}) or {}
+            formatted.append({
+                'id': j.get('id'),
+                'dateAdded': j.get('dateAdded'),
+                'dateFormatted': datetime.fromtimestamp(j.get('dateAdded', 0) / 1000).strftime('%Y-%m-%d %H:%M') if j.get('dateAdded') else None,
+                'title': j.get('title') or None,
+                'status': j.get('status') or None,
+                'clientName': client.get('name') or None,
+                'ownerName': f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or None,
+                'employmentType': j.get('employmentType') or None,
+                'salary': j.get('salary'),
+                'numOpenings': j.get('numOpenings'),
+                'isOpen': j.get('isOpen')
+            })
+        return formatted, None
+    except Exception as e:
+        return None, str(e)
+
+@app.route('/api/jobs')
+def api_jobs():
+    """Fetch jobs with date filtering. Use start/end (YYYY-MM-DD), or year+month, or year."""
+    start_ms, end_ms = parse_date_range_from_request()
+    formatted, err = _fetch_jobs_formatted(start_ms, end_ms)
+    if err:
+        if err == 'Not authenticated':
+            return jsonify({'error': err}), 401
+        return jsonify({'success': False, 'error': err}), 500
+    return jsonify({'success': True, 'count': len(formatted), 'data': formatted})
+
+@app.route('/api/jobs/detailed')
+def api_jobs_detailed():
+    """Fetch jobs with full details. Same structure as /api/jobs (can be identical initially)."""
+    start_ms, end_ms = parse_date_range_from_request()
+    formatted, err = _fetch_jobs_formatted(start_ms, end_ms)
+    if err:
+        if err == 'Not authenticated':
+            return jsonify({'error': err}), 401
+        return jsonify({'success': False, 'error': err}), 500
+    return jsonify({'success': True, 'count': len(formatted), 'data': formatted})
 
 @app.route('/api/meta/<entity>')
 def api_meta(entity):
