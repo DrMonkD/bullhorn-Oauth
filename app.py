@@ -20,7 +20,7 @@ LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD
 
 # Supabase configuration
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', os.environ.get('SUPABASE_KEY', ''))  # Support both names
 supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
@@ -28,6 +28,13 @@ if SUPABASE_URL and SUPABASE_KEY:
         print("✅ Supabase client initialized")
     except Exception as e:
         print(f"⚠️ Failed to initialize Supabase client: {e}")
+else:
+    missing = []
+    if not SUPABASE_URL:
+        missing.append('SUPABASE_URL')
+    if not SUPABASE_KEY:
+        missing.append('SUPABASE_SERVICE_KEY (or SUPABASE_KEY)')
+    print(f"⚠️ Supabase not configured. Missing environment variables: {', '.join(missing)}")
 
 # Auto-refresh configuration
 REFRESH_INTERVAL_MINUTES = 5  # Refresh every 5 minutes
@@ -1893,6 +1900,59 @@ def api_tokens():
         }
         return jsonify(safe_tokens)
     return jsonify({'error': 'No tokens found'}), 404
+
+@app.route('/api/supabase/status')
+def api_supabase_status():
+    """Check Supabase configuration and connection status"""
+    status = {
+        'configured': supabase is not None,
+        'supabase_url_set': bool(SUPABASE_URL),
+        'supabase_key_set': bool(SUPABASE_KEY),
+    }
+    
+    if not status['configured']:
+        missing = []
+        if not SUPABASE_URL:
+            missing.append('SUPABASE_URL')
+        if not SUPABASE_KEY:
+            missing.append('SUPABASE_KEY')
+        status['message'] = f"Supabase not configured. Missing: {', '.join(missing)}"
+        status['instructions'] = "Set SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_KEY) environment variables in Render"
+        return jsonify(status), 200
+    
+    # Test connection by querying a simple table
+    try:
+        result = supabase.table('open_jobs').select('bullhorn_id', count='exact').limit(1).execute()
+        status['connected'] = True
+        status['message'] = 'Supabase connected successfully'
+        status['table_exists'] = True
+    except Exception as e:
+        status['connected'] = False
+        status['message'] = f'Supabase connection test failed: {str(e)}'
+        status['table_exists'] = False
+    
+    return jsonify(status), 200
+
+@app.route('/api/supabase/sync', methods=['POST'])
+def api_supabase_sync():
+    """Manually trigger Bullhorn jobs sync to Supabase"""
+    if not supabase:
+        return jsonify({
+            'success': False,
+            'error': 'Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_KEY) environment variables.'
+        }), 400
+    
+    try:
+        sync_bullhorn_jobs()
+        return jsonify({
+            'success': True,
+            'message': 'Sync completed. Check logs for details.'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/api/status')
 def api_status():
