@@ -160,11 +160,10 @@ ANALYTICS_TEMPLATE = '''
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         
-        // Bar chart via Chart.js (works from CDN); supports bar/line toggle
+        // Bar chart via Chart.js (works from CDN)
         function BarChartCanvas({ data, labelsKey, datasets, title, height }) {
             const canvasRef = useRef(null);
             const chartRef = useRef(null);
-            const [chartType, setChartType] = useState('bar');
             const ChartLib = typeof window !== 'undefined' ? window.Chart : (typeof Chart !== 'undefined' ? Chart : null);
             
             useEffect(function() {
@@ -172,15 +171,12 @@ ANALYTICS_TEMPLATE = '''
                 var ctx = canvasRef.current && canvasRef.current.getContext('2d');
                 if (!ctx) return;
                 if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-                var isLine = chartType === 'line';
                 chartRef.current = new ChartLib(ctx, {
-                    type: isLine ? 'line' : 'bar',
+                    type: 'bar',
                     data: {
                         labels: data.map(function(d) { return d[labelsKey]; }),
                         datasets: datasets.map(function(ds) {
-                            var base = { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }) };
-                            if (isLine) return Object.assign(base, { borderColor: ds.color, backgroundColor: ds.color, fill: false });
-                            return Object.assign(base, { backgroundColor: ds.color });
+                            return { label: ds.label, data: data.map(function(d) { return d[ds.dataKey] || 0; }), backgroundColor: ds.color };
                         })
                     },
                     options: {
@@ -191,29 +187,13 @@ ANALYTICS_TEMPLATE = '''
                     }
                 });
                 return function() { if (chartRef.current) chartRef.current.destroy(); };
-            }, [data, labelsKey, chartType]);
+            }, [data, labelsKey]);
             
             if (!ChartLib) return <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg"><p className="text-amber-800 text-sm">Charts unavailable (Chart.js failed to load).</p></div>;
             if (!data || data.length === 0) return null;
             return (
                 <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
-                    <div className="flex justify-between items-center gap-4 mb-4 flex-wrap">
-                        <div>{title && <h3 className="text-base font-medium text-slate-800">{title}</h3>}</div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setChartType('bar')}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${chartType === 'bar' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                            >
-                                Bar
-                            </button>
-                            <button
-                                onClick={() => setChartType('line')}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${chartType === 'line' ? 'bg-slate-800 text-white' : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                            >
-                                Line
-                            </button>
-                        </div>
-                    </div>
+                    {title && <h3 className="text-base font-medium text-slate-800 mb-4">{title}</h3>}
                     <div style={{ "{{" }}"height": (height || 300) + "px"{{ "}}" }}>
                         <canvas ref={canvasRef}></canvas>
                     </div>
