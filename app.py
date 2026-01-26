@@ -23,6 +23,8 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', os.environ.get('SUPABASE_KEY', ''))  # Support both names
 supabase: Client = None
 SUPABASE_KEY = SUPABASE_KEY.strip()
+print(">>> RAW SUPABASE_KEY:", SUPABASE_KEY)
+print(">>> TYPE:", type(SUPABASE_KEY))
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         # Initialize Supabase client without proxy to avoid version compatibility issues
