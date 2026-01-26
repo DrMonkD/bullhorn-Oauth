@@ -3,6 +3,7 @@ import requests
 import json
 import os
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -1555,7 +1556,7 @@ def login():
             error=True, 
             message="CLIENT_ID not configured. Set environment variable BULLHORN_CLIENT_ID")
     
-    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}&state=login"
+    auth_url = f"https://auth.bullhornstaffing.com/oauth/authorize?client_id={quote(CLIENT_ID, safe='')}&response_type=code&redirect_uri={quote(REDIRECT_URI, safe='')}&state=login"
     # #region agent log
     try:
         _log = {"location": "app(1).py:login", "message": "OAuth login redirect", "data": {"client_id_truthy": bool(CLIENT_ID), "redirect_uri_truthy": bool(REDIRECT_URI), "redirect_uri_len": len(REDIRECT_URI) if REDIRECT_URI else 0, "auth_url_has_state": "state=" in auth_url, "auth_url_len": len(auth_url)}, "timestamp": int(datetime.now().timestamp() * 1000), "sessionId": "debug-session", "hypothesisId": "H1,H4"}
