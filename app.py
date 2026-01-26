@@ -24,8 +24,29 @@ SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', os.environ.get('SUPABASE_K
 supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Initialize Supabase client without proxy to avoid version compatibility issues
+        # The client will use the REST API URL directly (not the PostgreSQL pooler)
+        # For proxy/network issues, configure HTTP_PROXY/HTTPS_PROXY env vars separately if needed
+        supabase = create_client(
+            SUPABASE_URL,
+            SUPABASE_KEY,
+            options={
+                'auto_refresh_token': False,
+                'persist_session': False
+            }
+        )
         print("✅ Supabase client initialized")
+    except TypeError as e:
+        # Handle version compatibility - try without options if they're not supported
+        if 'proxy' in str(e).lower() or 'unexpected keyword' in str(e).lower():
+            try:
+                # Fallback: simple initialization without options
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                print("✅ Supabase client initialized (fallback method)")
+            except Exception as e2:
+                print(f"⚠️ Failed to initialize Supabase client: {e2}")
+        else:
+            print(f"⚠️ Failed to initialize Supabase client: {e}")
     except Exception as e:
         print(f"⚠️ Failed to initialize Supabase client: {e}")
 else:
