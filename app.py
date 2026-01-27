@@ -19,46 +19,118 @@ TOKEN_FILE = 'token_store.json'
 LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD/bullhorn-Oauth/main/Concord%20Icon.png')
 
 # Supabase configuration
+print("=" * 60)
+print("Initializing Supabase Connection")
+print("=" * 60)
+
+# Check which environment variables are available
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', os.environ.get('SUPABASE_KEY', ''))  # Support both names
-supabase: Client = None
-SUPABASE_KEY = SUPABASE_KEY.strip()
-print(">>> RAW SUPABASE_KEY:", SUPABASE_KEY)
-print(">>> TYPE:", type(SUPABASE_KEY))
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        # Initialize Supabase client without proxy to avoid version compatibility issues
-        # The client will use the REST API URL directly (not the PostgreSQL pooler)
-        # For proxy/network issues, configure HTTP_PROXY/HTTPS_PROXY env vars separately if needed
-        supabase = create_client(
-            SUPABASE_URL,
-            SUPABASE_KEY,
-            options={
-                'auto_refresh_token': False,
-                'persist_session': False
-            }
-        )
-        print("✅ Supabase client initialized")
-    except TypeError as e:
-        # Handle version compatibility - try without options if they're not supported
-        if 'proxy' in str(e).lower() or 'unexpected keyword' in str(e).lower():
-            try:
-                # Fallback: simple initialization without options
-                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-                print("✅ Supabase client initialized (fallback method)")
-            except Exception as e2:
-                print(f"⚠️ Failed to initialize Supabase client: {e2}")
-        else:
-            print(f"⚠️ Failed to initialize Supabase client: {e}")
-    except Exception as e:
-        print(f"⚠️ Failed to initialize Supabase client: {e}")
+SUPABASE_SERVICE_KEY_ENV = os.environ.get('SUPABASE_SERVICE_KEY', '')
+SUPABASE_KEY_ENV = os.environ.get('SUPABASE_KEY', '')
+
+# Determine which key to use and log the source
+if SUPABASE_SERVICE_KEY_ENV:
+    SUPABASE_KEY = SUPABASE_SERVICE_KEY_ENV
+    key_source = "SUPABASE_SERVICE_KEY (preferred)"
+    print(f"✅ Found SUPABASE_SERVICE_KEY environment variable")
+elif SUPABASE_KEY_ENV:
+    SUPABASE_KEY = SUPABASE_KEY_ENV
+    key_source = "SUPABASE_KEY (fallback)"
+    print(f"⚠️ Found SUPABASE_KEY (fallback) - Consider using SUPABASE_SERVICE_KEY for clarity")
 else:
+    SUPABASE_KEY = ''
+    key_source = "none"
+    print(f"❌ No Supabase key found in environment variables")
+
+# Log URL status
+if SUPABASE_URL:
+    print(f"✅ Found SUPABASE_URL: {SUPABASE_URL[:50]}...")
+else:
+    print(f"❌ SUPABASE_URL not found in environment variables")
+
+supabase: Client = None
+is_service_role_key = True  # Track if we should proceed with initialization
+
+if SUPABASE_URL and SUPABASE_KEY:
+    print(f"\n📋 Using key from: {key_source}")
+    print(f"🔍 Validating key type...")
+    
+    # Validate that we're using service_role key, not anon key
+    try:
+        import base64
+        import json as json_lib
+        # Decode JWT to check the role (simple decode without verification)
+        parts = SUPABASE_KEY.split('.')
+        if len(parts) >= 2:
+            # Decode the payload (second part)
+            payload = parts[1]
+            # Add padding if needed
+            payload += '=' * (4 - len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload)
+            jwt_data = json_lib.loads(decoded)
+            role = jwt_data.get('role', 'unknown')
+            if role == 'anon':
+                print("❌ ERROR: You are using the 'anon' (public) API key!")
+                print("   For server-side operations, you MUST use the 'service_role' key.")
+                print("   Get it from: Supabase Dashboard → Project Settings → API → service_role key")
+                print("   Set it as SUPABASE_SERVICE_KEY environment variable in Render")
+                print("   Current key source: " + key_source)
+                is_service_role_key = False
+            elif role == 'service_role':
+                print(f"✅ Detected service_role key (correct for server-side operations)")
+            else:
+                print(f"⚠️ Unknown key role: {role}. Expected 'service_role'")
+        else:
+            print(f"⚠️ Key format unexpected (not a valid JWT). Proceeding with initialization...")
+    except Exception as jwt_check_error:
+        # If JWT decode fails, continue anyway - might be a different format
+        print(f"⚠️ Could not validate key role (continuing anyway): {jwt_check_error}")
+    
+    if is_service_role_key:
+        try:
+            print(f"\n🔗 Initializing Supabase client...")
+            # Ensure URL doesn't have trailing slash (supabase-py expects clean URL)
+            clean_url = SUPABASE_URL.rstrip('/')
+            print(f"   URL: {clean_url}")
+            # Simple initialization - supabase-py uses REST API URL directly
+            # Don't test connection here - let it fail on first use if there's an issue
+            supabase = create_client(clean_url, SUPABASE_KEY)
+            print("✅ Supabase client initialized successfully")
+            print("=" * 60)
+        except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"\n❌ Failed to initialize Supabase client")
+            print(f"   Error type: {error_type}")
+            print(f"   Error message: {error_msg}")
+            import traceback
+            tb = traceback.format_exc()
+            print(f"\n   Full traceback:\n{tb}")
+            # If it's the headers error, it's likely a version compatibility issue
+            if "'dict' object has no attribute 'headers'" in error_msg or "headers" in error_msg.lower():
+                print("\n💡 This appears to be a supabase-py/postgrest version compatibility issue.")
+                print("   Updated requirements.txt to use supabase>=2.8.0 and postgrest>=0.15.0")
+                print("   After redeploy, pip should install compatible versions automatically")
+            print("=" * 60)
+            supabase = None
+    else:
+        print("\n❌ Skipping Supabase initialization due to invalid key type")
+        print("=" * 60)
+else:
+    print("\n❌ Supabase not configured. Missing environment variables:")
     missing = []
     if not SUPABASE_URL:
         missing.append('SUPABASE_URL')
+        print("   - SUPABASE_URL (required)")
     if not SUPABASE_KEY:
-        missing.append('SUPABASE_SERVICE_KEY (or SUPABASE_KEY)')
-    print(f"⚠️ Supabase not configured. Missing environment variables: {', '.join(missing)}")
+        missing.append('SUPABASE_SERVICE_KEY or SUPABASE_KEY')
+        print("   - SUPABASE_SERVICE_KEY (preferred) or SUPABASE_KEY (fallback)")
+    print("\n📝 To fix this:")
+    print("   1. Go to Render Dashboard → Your Service → Environment")
+    print("   2. Add SUPABASE_URL: https://your-project-id.supabase.co")
+    print("   3. Add SUPABASE_SERVICE_KEY: your-service-role-key")
+    print("   4. Get keys from: Supabase Dashboard → Project Settings → API")
+    print("=" * 60)
 
 # Auto-refresh configuration
 REFRESH_INTERVAL_MINUTES = 5  # Refresh every 5 minutes
@@ -1928,10 +2000,21 @@ def api_tokens():
 @app.route('/api/supabase/status')
 def api_supabase_status():
     """Check Supabase configuration and connection status"""
+    # Check which environment variables are actually set
+    env_supabase_url = os.environ.get('SUPABASE_URL', '')
+    env_service_key = os.environ.get('SUPABASE_SERVICE_KEY', '')
+    env_key = os.environ.get('SUPABASE_KEY', '')
+    
     status = {
         'configured': supabase is not None,
         'supabase_url_set': bool(SUPABASE_URL),
         'supabase_key_set': bool(SUPABASE_KEY),
+        'environment_variables': {
+            'SUPABASE_URL': 'set' if env_supabase_url else 'not set',
+            'SUPABASE_SERVICE_KEY': 'set' if env_service_key else 'not set',
+            'SUPABASE_KEY': 'set' if env_key else 'not set',
+        },
+        'key_source': 'SUPABASE_SERVICE_KEY' if env_service_key else ('SUPABASE_KEY' if env_key else 'none'),
     }
     
     if not status['configured']:
@@ -1939,9 +2022,27 @@ def api_supabase_status():
         if not SUPABASE_URL:
             missing.append('SUPABASE_URL')
         if not SUPABASE_KEY:
-            missing.append('SUPABASE_KEY')
+            missing.append('SUPABASE_SERVICE_KEY (or SUPABASE_KEY)')
+        
         status['message'] = f"Supabase not configured. Missing: {', '.join(missing)}"
-        status['instructions'] = "Set SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_KEY) environment variables in Render"
+        status['instructions'] = {
+            'step1': 'Go to Render Dashboard → Your Service → Environment',
+            'step2': f"Add SUPABASE_URL: {env_supabase_url if env_supabase_url else 'https://your-project-id.supabase.co'}",
+            'step3': 'Add SUPABASE_SERVICE_KEY: your-service-role-key',
+            'step4': 'Get keys from: Supabase Dashboard → Project Settings → API',
+            'note': 'Use SUPABASE_SERVICE_KEY (not SUPABASE_KEY) for server-side operations'
+        }
+        
+        # Provide specific guidance based on what's missing
+        if not env_supabase_url and not env_service_key and not env_key:
+            status['diagnosis'] = 'No Supabase environment variables found. Check Render environment settings.'
+        elif env_supabase_url and not env_service_key and not env_key:
+            status['diagnosis'] = 'SUPABASE_URL is set but no key found. Add SUPABASE_SERVICE_KEY.'
+        elif not env_supabase_url and (env_service_key or env_key):
+            status['diagnosis'] = 'Supabase key is set but SUPABASE_URL is missing.'
+        elif env_key and not env_service_key:
+            status['diagnosis'] = 'Using SUPABASE_KEY fallback. Consider using SUPABASE_SERVICE_KEY for clarity.'
+        
         return jsonify(status), 200
     
     # Test connection by querying a simple table
@@ -1950,10 +2051,30 @@ def api_supabase_status():
         status['connected'] = True
         status['message'] = 'Supabase connected successfully'
         status['table_exists'] = True
+        status['test_query'] = 'passed'
+        if hasattr(result, 'count'):
+            status['record_count'] = result.count
     except Exception as e:
+        error_msg = str(e)
+        error_type = type(e).__name__
         status['connected'] = False
-        status['message'] = f'Supabase connection test failed: {str(e)}'
-        status['table_exists'] = False
+        status['message'] = f'Supabase connection test failed'
+        status['error'] = {
+            'type': error_type,
+            'message': error_msg
+        }
+        status['test_query'] = 'failed'
+        
+        # Provide specific guidance based on error type
+        if 'relation' in error_msg.lower() or 'does not exist' in error_msg.lower():
+            status['diagnosis'] = 'Connection works but table does not exist. This is normal if tables haven\'t been created yet.'
+            status['table_exists'] = False
+        elif 'permission' in error_msg.lower() or 'unauthorized' in error_msg.lower():
+            status['diagnosis'] = 'Authentication failed. Check that you\'re using the service_role key (not anon key).'
+        elif 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
+            status['diagnosis'] = 'Network connection issue. Check Supabase project status and network connectivity.'
+        else:
+            status['diagnosis'] = 'Unknown error. Check Render logs for more details.'
     
     return jsonify(status), 200
 
