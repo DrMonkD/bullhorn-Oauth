@@ -1432,7 +1432,7 @@ def sync_bullhorn_jobs():
         params = {
             'BhRestToken': tokens['bh_rest_token'],
             'where': 'isOpen=true AND isDeleted=false',
-            'fields': 'id,title,status,isOpen,dateAdded,employmentType,salary,numOpenings,clientCorporation(id,name),owner(id,firstName,lastName)',
+            'fields': 'id,title,status,isOpen,dateAdded,employmentType,salary,numOpenings,description,specialties,address(city,state),startDate,publicDescription,clientCorporation(id,name),owner(id,firstName,lastName)',
             'count': 500
         }
         
@@ -1454,24 +1454,39 @@ def sync_bullhorn_jobs():
         for job in jobs:
             owner = (job.get('owner') or {})
             client = (job.get('clientCorporation') or {})
+            address = (job.get('address') or {})
+            
             date_added_ms = job.get('dateAdded')
             date_added = None
             if date_added_ms:
                 date_added = datetime.fromtimestamp(date_added_ms / 1000).isoformat()
             
+            # Handle start_date conversion
+            start_date_ms = job.get('startDate')
+            start_date = None
+            if start_date_ms:
+                start_date = datetime.fromtimestamp(start_date_ms / 1000).isoformat()
+            
             owner_name = f"{owner.get('firstName', '')} {owner.get('lastName', '')}".strip() or None
+            
+            # Get description from either description or publicDescription field
+            description = job.get('description') or job.get('publicDescription')
             
             row = {
                 'bullhorn_id': job.get('id'),
                 'title': job.get('title', 'Unknown'),
                 'status': job.get('status', 'Unknown'),
+                'description': description,  # NEW: Job description
+                'specialties': job.get('specialties'),  # NEW: Specialties
+                'city': address.get('city') if address else None,  # NEW: City from address
+                'state': address.get('state') if address else None,  # NEW: State from address
                 'client_id': client.get('id'),
                 'client_name': client.get('name'),
                 'owner_id': owner.get('id'),
                 'owner_name': owner_name,
                 'employment_type': job.get('employmentType'),
                 'salary': job.get('salary'),
-                'start_date': None,  # Not in API response
+                'start_date': start_date,  # UPDATED: Now extracts from API
                 'num_openings': job.get('numOpenings'),
                 'is_open': job.get('isOpen', True),
                 'date_added': date_added,
