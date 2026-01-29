@@ -2316,7 +2316,8 @@ def fetch_notes(start_ms, end_ms):
     """
     Fetch Note records from Bullhorn (notes added in date range).
     Returns (list_of_notes, None) on success or (None, error_message) on failure.
-    Bullhorn uses entity name NoteEntity for query/entity (per REST docs). Field commentingPerson = user who created the note.
+    Uses the Note entity only: Note has dateAdded and commentingPerson. NoteEntity is a link/junction
+    entity and does NOT have dateAdded, so we must not query it with those fields.
     """
     tokens = load_tokens()
     if not tokens or not tokens.get('bh_rest_token'):
@@ -2331,29 +2332,24 @@ def fetch_notes(start_ms, end_ms):
         'orderBy': '-dateAdded',
         'count': 2000
     }
-    # Try NoteEntity first (entity name per Bullhorn REST API DELETE example)
-    for entity_name in ('NoteEntity', 'Note'):
-        try:
-            url = f"{rest_url}query/{entity_name}"
-            response = requests.get(url, params=params, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                return (data.get('data', []), None)
-            err_body = (response.text or "")[:500]
-            msg = f"Bullhorn {response.status_code} ({entity_name}): {err_body}"
-            print(f"Error fetching Notes ({entity_name}): {msg}")
-            if response.status_code == 404:
-                continue
-            return (None, msg)
-        except requests.exceptions.RequestException as e:
-            msg = f"Request error ({entity_name}): {e!s}"
-            print(f"Error fetching Notes: {msg}")
-            return (None, msg)
-        except Exception as e:
-            msg = f"Error ({entity_name}): {e!s}"
-            print(f"Error fetching Notes: {msg}")
-            return (None, msg)
-    return (None, "Bullhorn returned 404 for both NoteEntity and Note. Your tenant may use a different entity name for notes.")
+    try:
+        url = f"{rest_url}query/Note"
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            return (data.get('data', []), None)
+        err_body = (response.text or "")[:500]
+        msg = f"Bullhorn {response.status_code} (Note): {err_body}"
+        print(f"Error fetching Notes: {msg}")
+        return (None, msg)
+    except requests.exceptions.RequestException as e:
+        msg = f"Request error (Note): {e!s}"
+        print(f"Error fetching Notes: {msg}")
+        return (None, msg)
+    except Exception as e:
+        msg = f"Error (Note): {e!s}"
+        print(f"Error fetching Notes: {msg}")
+        return (None, msg)
 
 def get_recruiter_name(item):
     """Extract recruiter name from sendingUser (JobSubmission) or owner (Placement) field."""
