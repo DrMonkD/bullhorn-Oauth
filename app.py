@@ -396,6 +396,7 @@ ANALYTICS_TEMPLATE = '''
             
             // Analytics data
             const [recruitersData, setRecruitersData] = useState([]);
+            const [notesByUserData, setNotesByUserData] = useState([]);
             
             // Date/period: 'week'|'month'|'year'|'custom'
             const [periodType, setPeriodType] = useState('month');
@@ -528,6 +529,14 @@ ANALYTICS_TEMPLATE = '''
                         } else {
                             const errorText = await res.text();
                             throw new Error('Failed to fetch detailed jobs: ' + errorText.substring(0, 100));
+                        }
+                    } else if (viewMode === 'notes_by_user') {
+                        const res = await fetch('/api/analytics/notes-by-user?' + q);
+                        if (res.ok) {
+                            const data = await res.json();
+                            setNotesByUserData(data.notesByUser || []);
+                        } else {
+                            throw new Error('Failed to fetch notes by user');
                         }
                     }
                 } catch (err) {
@@ -760,7 +769,7 @@ ANALYTICS_TEMPLATE = '''
                                 >
                                     Refresh
                                 </button>
-                                {(viewMode === 'basic' || (viewMode === 'detailed' && detailedSubmissions.length > 0) || (viewMode === 'detailed_placements' && detailedPlacements.length > 0) || (viewMode === 'jobs' && detailedJobs.length > 0)) && (
+                                {(viewMode === 'basic' || (viewMode === 'detailed' && detailedSubmissions.length > 0) || (viewMode === 'detailed_placements' && detailedPlacements.length > 0) || (viewMode === 'jobs' && detailedJobs.length > 0) || (viewMode === 'notes_by_user' && notesByUserData.length > 0)) && (
                                     <button
                                         onClick={() => {
                                             if (viewMode === 'basic') {
@@ -805,6 +814,17 @@ ANALYTICS_TEMPLATE = '''
                                                 var a = document.createElement('a');
                                                 a.href = url;
                                                 a.download = 'jobs_' + dateRange.start + '_' + dateRange.end + '.csv';
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                            } else if (viewMode === 'notes_by_user') {
+                                                var rows = [['User', 'Notes added']];
+                                                notesByUserData.forEach(function(row){ rows.push([(row.name || '').replace(/"/g, '""'), String(row.noteCount || 0)]); });
+                                                var csv = rows.map(function(r){ return r.map(function(c){ return '"' + (c || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\\n');
+                                                var blob = new Blob([csv], { type: 'text/csv' });
+                                                var url = window.URL.createObjectURL(blob);
+                                                var a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = 'notes_by_user_' + dateRange.start + '_' + dateRange.end + '.csv';
                                                 a.click();
                                                 window.URL.revokeObjectURL(url);
                                             }
@@ -860,6 +880,16 @@ ANALYTICS_TEMPLATE = '''
                                     }`}
                                 >
                                     Jobs
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('notes_by_user')}
+                                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                        viewMode === 'notes_by_user' 
+                                            ? 'bg-slate-800 text-white' 
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    Notes by user
                                 </button>
                             </div>
                         </div>
@@ -1069,6 +1099,41 @@ ANALYTICS_TEMPLATE = '''
                                                                         <td className="py-2 px-4 text-right text-slate-600 text-sm">{(rec.statusBreakdown || {})['Presented'] || 0}</td>
                                                                         <td className="py-2 px-4 text-right text-slate-600 text-sm">{rec.totalPlacements}</td>
                                                                         <td className={`py-2 px-4 text-right text-sm ${getConversionColor(parseFloat(conversion))}`}>{conversion}%</td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                                
+                                {viewMode === 'notes_by_user' && (
+                                    <>
+                                        <div className="mb-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-lg">
+                                            <h3 className="text-base font-semibold text-slate-800 mb-4">Notes added by user</h3>
+                                            <p className="text-sm text-slate-600 mb-4">Count of notes created in the selected period (by commenting person).</p>
+                                            <div className="overflow-x-auto bg-white border-2 border-slate-200 rounded-lg">
+                                                <table className="w-full">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-200 bg-slate-50">
+                                                            <th className="text-left py-2 px-4 font-medium text-slate-600 text-sm">User</th>
+                                                            <th className="text-right py-2 px-4 font-medium text-slate-600 text-sm">Notes added</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {notesByUserData.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="2" className="text-center py-8 text-slate-500 text-sm">No notes data for this period</td>
+                                                            </tr>
+                                                        ) : (
+                                                            notesByUserData.map(function(row, idx) {
+                                                                return (
+                                                                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 last:border-b-0">
+                                                                        <td className="py-2 px-4 text-slate-800 text-sm">{row.name}</td>
+                                                                        <td className="py-2 px-4 text-right text-slate-600 text-sm font-medium">{row.noteCount}</td>
                                                                     </tr>
                                                                 );
                                                             })
@@ -1358,6 +1423,7 @@ ANALYTICS_TEMPLATE = '''
                                         <a href={'/api/placements/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Placements (raw)</a>
                                         <a href={'/api/jobs/detailed?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Jobs (raw)</a>
                                         <a href={'/api/analytics/recruiters?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Recruiters (raw)</a>
+                                        <a href={'/api/analytics/notes-by-user?start=' + encodeURIComponent(dateRange.start) + '&end=' + encodeURIComponent(dateRange.end)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white border-2 border-slate-200 text-slate-700 rounded-md text-sm hover:bg-slate-50">Notes by user (raw)</a>
                                     </div>
                                 </div>
                             </>
@@ -2246,6 +2312,35 @@ def fetch_placements(start_ms, end_ms, include_recruiter=True):
         print(f"Error fetching Placements: {e}")
         return None
 
+def fetch_notes(start_ms, end_ms):
+    """
+    Fetch Note records from Bullhorn (notes added in date range).
+    Returns list of notes with id, dateAdded, commentingPerson(id,firstName,lastName), action.
+    Bullhorn entity: Note. Field commentingPerson = user who created the note.
+    """
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return None
+    try:
+        rest_url = tokens['rest_url']
+        if not rest_url.endswith('/'):
+            rest_url += '/'
+        url = f"{rest_url}query/Note"
+        params = {
+            'BhRestToken': tokens['bh_rest_token'],
+            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+            'fields': 'id,dateAdded,commentingPerson(id,firstName,lastName),action',
+            'orderBy': '-dateAdded',
+            'count': 2000
+        }
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('data', [])
+    except Exception as e:
+        print(f"Error fetching Notes: {e}")
+        return None
+
 def get_recruiter_name(item):
     """Extract recruiter name from sendingUser (JobSubmission) or owner (Placement) field."""
     u = item.get('sendingUser') or item.get('owner')
@@ -3084,6 +3179,35 @@ def api_analytics_recruiters():
         result.sort(key=lambda x: x['totalSubmissions'], reverse=True)
         
         return jsonify({'recruiters': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/notes-by-user')
+def api_analytics_notes_by_user():
+    """Get count of notes added per user in date range. Use start/end (YYYY-MM-DD), or year+month, or year."""
+    tokens = load_tokens()
+    if not tokens or not tokens.get('bh_rest_token'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    start_ms, end_ms = parse_date_range_from_request()
+    try:
+        notes = fetch_notes(start_ms, end_ms)
+        if notes is None:
+            return jsonify({'error': 'Failed to fetch notes from Bullhorn'}), 500
+        user_map = {}
+        for n in notes:
+            person = n.get('commentingPerson') or {}
+            uid = person.get('id')
+            name = f"{person.get('firstName', '')} {person.get('lastName', '')}".strip() or "Unknown"
+            if uid is None:
+                uid = 0
+                name = name or "Unknown"
+            key = f"{uid}_{name}"
+            if key not in user_map:
+                user_map[key] = {'userId': uid, 'name': name, 'noteCount': 0}
+            user_map[key]['noteCount'] += 1
+        result = list(user_map.values())
+        result.sort(key=lambda x: x['noteCount'], reverse=True)
+        return jsonify({'notesByUser': result})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
