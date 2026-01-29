@@ -18,6 +18,23 @@ TOKEN_FILE = 'token_store.json'
 # Logo: set LOGO_URL to override; default uses Concord Icon from bullhorn-Oauth repo
 LOGO_URL = os.environ.get('LOGO_URL', 'https://raw.githubusercontent.com/DrMonkD/bullhorn-Oauth/main/Concord%20Icon.png')
 
+# AHSA API configuration
+AHSA_API_KEY = os.environ.get('AHSA_API_KEY', 'apsk0bBgWPY4UkAH5SCOh5jHr5gEYdKpiGpg5Qa3106ED2AD20')
+AHSA_API_BASE_URL = 'https://ahsa-yarp-api.triovms.com/api/v3'
+
+def flatten(d, parent_key="", sep="."):
+    """Flatten nested dict for reading fields like Position.Title, Location.City."""
+    items = {}
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.update(flatten(v, new_key, sep))
+        elif isinstance(v, list):
+            items[new_key] = json.dumps(v)
+        else:
+            items[new_key] = v
+    return items
+
 # Supabase configuration
 print("=" * 60)
 print("Initializing Supabase Connection")
@@ -191,6 +208,10 @@ HTML_TEMPLATE = '''
                 <a href="/analytics" class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2">
                     <span>📊</span>
                     Analytics Dashboard
+                </a>
+                <a href="/ahsa" class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2">
+                    <span>🔗</span>
+                    AHSA Job Board
                 </a>
                 <a href="/analytics?view=jobs" class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2">
                     Jobs Dashboard
@@ -1385,6 +1406,257 @@ ANALYTICS_TEMPLATE = '''
             // DOM already loaded, wait a bit for scripts
             setTimeout(initApp, 100);
         }
+    </script>
+</body>
+</html>
+'''
+
+AHSA_HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AHSA Job Board Integration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-lg shadow-xl p-8">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                    </svg>
+                    <h1 class="text-3xl font-bold text-gray-800">AHSA Job Board Integration</h1>
+                </div>
+                <a href="/" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                    Back to Main Dashboard
+                </a>
+            </div>
+
+            <!-- Status Messages Area -->
+            <div id="statusMessage" class="mb-4 hidden p-4 rounded-lg"></div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 mb-6 flex-wrap">
+                <button id="fetchJobsBtn" class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2">
+                    <span id="fetchJobsIcon">📥</span>
+                    <span id="fetchJobsText">Fetch AHSA Jobs</span>
+                </button>
+                <button id="pushToSupabaseBtn" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors inline-flex items-center gap-2" disabled>
+                    <span>💾</span>
+                    Push to Supabase
+                </button>
+                <button id="refreshBtn" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2">
+                    <span>🔄</span>
+                    Refresh
+                </button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="hidden text-center py-12">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-2 border-purple-300 border-t-purple-600"></div>
+                <p class="mt-4 text-gray-600">Loading jobs...</p>
+            </div>
+
+            <!-- Jobs Table -->
+            <div id="jobsContainer" class="hidden">
+                <div class="mb-4 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Fetched Jobs</h3>
+                    <p id="jobsCount" class="text-sm text-gray-600"></p>
+                </div>
+                <div class="overflow-x-auto bg-white border-2 border-gray-200 rounded-lg">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200 bg-gray-50">
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Job ID</th>
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Job Title</th>
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Location</th>
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Posted Date</th>
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Status</th>
+                                <th class="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobsTableBody">
+                            <!-- Jobs will be inserted here dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p class="mt-4 text-gray-600">No jobs loaded. Click "Fetch AHSA Jobs" to get started.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let jobsData = [];
+
+        // Show status message
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = isError 
+                ? 'mb-4 p-4 bg-red-50 border-red-200 border rounded-lg'
+                : 'mb-4 p-4 bg-green-50 border-green-200 border rounded-lg';
+            statusDiv.innerHTML = `<p class="${isError ? 'text-red-800' : 'text-green-800'}">${message}</p>`;
+            statusDiv.classList.remove('hidden');
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Show loading spinner
+        function showLoading(show = true) {
+            const spinner = document.getElementById('loadingSpinner');
+            const fetchBtn = document.getElementById('fetchJobsBtn');
+            const fetchIcon = document.getElementById('fetchJobsIcon');
+            const fetchText = document.getElementById('fetchJobsText');
+            
+            if (show) {
+                spinner.classList.remove('hidden');
+                fetchBtn.disabled = true;
+                fetchIcon.textContent = '⏳';
+                fetchText.textContent = 'Fetching...';
+            } else {
+                spinner.classList.add('hidden');
+                fetchBtn.disabled = false;
+                fetchIcon.textContent = '📥';
+                fetchText.textContent = 'Fetch AHSA Jobs';
+            }
+        }
+
+        // Render jobs table
+        function renderJobs(jobs) {
+            jobsData = jobs;
+            const container = document.getElementById('jobsContainer');
+            const emptyState = document.getElementById('emptyState');
+            const tableBody = document.getElementById('jobsTableBody');
+            const jobsCount = document.getElementById('jobsCount');
+            const pushBtn = document.getElementById('pushToSupabaseBtn');
+
+            if (!jobs || jobs.length === 0) {
+                container.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                pushBtn.disabled = true;
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            container.classList.remove('hidden');
+            jobsCount.textContent = `Total: ${jobs.length} job(s)`;
+            pushBtn.disabled = false;
+
+            tableBody.innerHTML = jobs.map((job, index) => {
+                const jobId = job.id || job.jobId || `job-${index}`;
+                const title = job.title || job.jobTitle || 'N/A';
+                const location = job.location || job.city || job.address || 'N/A';
+                const datePosted = job.datePosted || job.postedDate || job.date_posted || 'N/A';
+                const status = job.status || 'Unknown';
+
+                return `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td class="py-3 px-4 text-gray-500 font-mono text-xs">${jobId}</td>
+                        <td class="py-3 px-4 text-gray-800 font-medium">${title}</td>
+                        <td class="py-3 px-4 text-gray-600">${location}</td>
+                        <td class="py-3 px-4 text-gray-600">${datePosted}</td>
+                        <td class="py-3 px-4">
+                            <span class="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">${status}</span>
+                        </td>
+                        <td class="py-3 px-4">
+                            <button onclick="viewJobDetails(${index})" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors mr-2">
+                                View Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // View job details
+        function viewJobDetails(index) {
+            const job = jobsData[index];
+            alert('Job Details:\\n\\n' + JSON.stringify(job, null, 2));
+        }
+
+        // Fetch jobs from API
+        async function fetchJobs() {
+            showLoading(true);
+            try {
+                const response = await fetch('/api/ahsa/jobs');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to fetch jobs');
+                }
+
+                if (data.success && data.data) {
+                    renderJobs(data.data);
+                    showStatus(`Successfully fetched ${data.count || data.data.length} job(s)`, false);
+                } else {
+                    renderJobs([]);
+                    showStatus('No jobs found or API returned empty data', false);
+                }
+            } catch (error) {
+                console.error('Error fetching jobs:', error);
+                showStatus('Error fetching jobs: ' + error.message, true);
+                renderJobs([]);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Push jobs to Supabase
+        async function pushToSupabase() {
+            if (!jobsData || jobsData.length === 0) {
+                showStatus('No jobs to push. Please fetch jobs first.', true);
+                return;
+            }
+
+            const pushBtn = document.getElementById('pushToSupabaseBtn');
+            const originalText = pushBtn.innerHTML;
+            pushBtn.disabled = true;
+            pushBtn.innerHTML = '<span>⏳</span> Pushing...';
+
+            try {
+                const response = await fetch('/api/ahsa/push-to-supabase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to push jobs to Supabase');
+                }
+
+                if (data.success) {
+                    showStatus(`Successfully pushed ${data.count || jobsData.length} job(s) to Supabase`, false);
+                } else {
+                    throw new Error(data.error || 'Push operation failed');
+                }
+            } catch (error) {
+                console.error('Error pushing to Supabase:', error);
+                showStatus('Error pushing to Supabase: ' + error.message, true);
+            } finally {
+                pushBtn.disabled = false;
+                pushBtn.innerHTML = originalText;
+            }
+        }
+
+        // Event listeners
+        document.getElementById('fetchJobsBtn').addEventListener('click', fetchJobs);
+        document.getElementById('pushToSupabaseBtn').addEventListener('click', pushToSupabase);
+        document.getElementById('refreshBtn').addEventListener('click', fetchJobs);
     </script>
 </body>
 </html>
@@ -2814,6 +3086,216 @@ def api_analytics_recruiters():
         return jsonify({'recruiters': result})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ==================== AHSA API INTEGRATION ====================
+
+@app.route('/ahsa')
+def ahsa_page():
+    """Render AHSA job board page"""
+    return render_template_string(AHSA_HTML_TEMPLATE)
+
+def normalize_ahsa_job_for_display(full_job):
+    """Build display dict (id, title, location, datePosted, status) from full AHSA job."""
+    flat = flatten(full_job)
+    job_id = str(full_job.get("Number") or full_job.get("Id") or flat.get("Id") or "unknown")
+    title = flat.get("Position.Title") or flat.get("Title") or full_job.get("Title") or "Untitled"
+    loc_parts = [
+        flat.get("Location.City"),
+        flat.get("Location.State"),
+        flat.get("Location"),
+        flat.get("Address"),
+        flat.get("City"),
+        full_job.get("Location"),
+        full_job.get("Address"),
+        full_job.get("City"),
+    ]
+    location = ", ".join(str(x).strip() for x in loc_parts if x and str(x).strip()) or "N/A"
+    date_val = (
+        flat.get("PostedDate") or flat.get("CreatedAt") or flat.get("DatePosted")
+        or flat.get("Position.PostedDate")
+        or full_job.get("PostedDate") or full_job.get("CreatedAt") or full_job.get("DatePosted")
+    )
+    if date_val is not None:
+        if isinstance(date_val, (int, float)):
+            date_posted = datetime.fromtimestamp(date_val / 1000).isoformat() if date_val > 1e12 else datetime.fromtimestamp(date_val).isoformat()
+        elif isinstance(date_val, str):
+            try:
+                date_posted = datetime.fromisoformat(date_val.replace("Z", "+00:00")).isoformat()
+            except Exception:
+                date_posted = date_val
+        else:
+            date_posted = str(date_val)
+    else:
+        date_posted = "N/A"
+    status = flat.get("Status") or full_job.get("Status") or "Unknown"
+    return {"id": job_id, "title": title, "location": location, "datePosted": date_posted, "status": status}
+
+def fetch_ahsa_jobs():
+    """Fetch jobs from AHSA API: list from /Job then full detail from /Job/{num}."""
+    base = AHSA_API_BASE_URL.rstrip("/")
+    headers = {"X-API-KEY": AHSA_API_KEY, "Accept": "application/json"}
+
+    # 1. Job list
+    list_url = f"{base}/Job"
+    print(f"Pulling job list from {list_url}...")
+    resp = requests.get(list_url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    jobs_response = resp.json()
+
+    if isinstance(jobs_response, dict):
+        jobs = jobs_response.get("Data") or jobs_response.get("Results")
+        if jobs is None:
+            raise ValueError(f"Unexpected response keys: {list(jobs_response.keys())}")
+    elif isinstance(jobs_response, list):
+        jobs = jobs_response
+    else:
+        raise ValueError("Unexpected response type")
+
+    job_numbers = [j.get("Number") for j in jobs if j.get("Number") is not None]
+    if not job_numbers:
+        print("No job numbers found in list")
+        return []
+    print(f"Found {len(job_numbers)} jobs")
+
+    # 2. Full job detail per number
+    full_jobs = []
+    for i, num in enumerate(job_numbers, 1):
+        try:
+            r = requests.get(f"{base}/Job/{num}", headers=headers, timeout=30)
+            r.raise_for_status()
+            full_job = r.json()
+            full_jobs.append(full_job)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching Job/{num}: {e}")
+            continue
+        if i % 25 == 0:
+            print(f"Fetched {i}/{len(job_numbers)} jobs")
+
+    return full_jobs
+
+@app.route('/api/ahsa/jobs')
+def api_ahsa_jobs():
+    """API endpoint to fetch AHSA jobs (returns normalized list for UI)."""
+    try:
+        jobs = fetch_ahsa_jobs()
+        data = [normalize_ahsa_job_for_display(j) for j in jobs] if jobs else []
+        return jsonify({"success": True, "data": data, "count": len(data)}), 200
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ API error: {error_msg}")
+        return jsonify({"success": False, "data": [], "count": 0, "error": error_msg}), 500
+
+def push_ahsa_jobs_to_supabase(jobs_data):
+    """Push AHSA jobs to Supabase ahsa_jobs table using flatten + full job for columns and raw_data."""
+    if not supabase:
+        raise Exception("Supabase client not initialized. Set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.")
+
+    if not jobs_data or len(jobs_data) == 0:
+        print("⚠️ No jobs data to push")
+        return {"success": False, "error": "No jobs data provided", "count": 0}
+
+    try:
+        synced_at = datetime.now().isoformat()
+        upsert_data = []
+
+        for job in jobs_data:
+            flat = flatten(job)
+            job_id = str(job.get("Number") or job.get("Id") or flat.get("Id") or "unknown")
+            title = flat.get("Position.Title") or flat.get("Title") or job.get("Title") or "Untitled"
+            description = flat.get("Description") or flat.get("Position.Description") or job.get("Description") or job.get("Summary")
+            loc_parts = [
+                flat.get("Location.City"),
+                flat.get("Location.State"),
+                flat.get("Location"),
+                flat.get("Address"),
+                flat.get("City"),
+                job.get("Location"),
+                job.get("Address"),
+                job.get("City"),
+            ]
+            location = ", ".join(str(x).strip() for x in loc_parts if x and str(x).strip()) if any(loc_parts) else None
+
+            date_val = (
+                flat.get("PostedDate") or flat.get("CreatedAt") or flat.get("DatePosted")
+                or flat.get("Position.PostedDate")
+                or job.get("PostedDate") or job.get("CreatedAt") or job.get("DatePosted")
+            )
+            date_posted = None
+            if date_val is not None:
+                if isinstance(date_val, (int, float)):
+                    date_posted = datetime.fromtimestamp(date_val / 1000).isoformat() if date_val > 1e12 else datetime.fromtimestamp(date_val).isoformat()
+                elif isinstance(date_val, str):
+                    try:
+                        date_posted = datetime.fromisoformat(date_val.replace("Z", "+00:00")).isoformat()
+                    except Exception:
+                        date_posted = date_val
+                else:
+                    date_posted = str(date_val)
+
+            status = flat.get("Status") or job.get("Status") or "Unknown"
+
+            row = {
+                "id": job_id,
+                "title": title,
+                "description": description,
+                "location": location,
+                "date_posted": date_posted,
+                "status": status,
+                "source": "AHSA",
+                "created_at": synced_at,
+                "updated_at": synced_at,
+                "raw_data": job,
+            }
+            upsert_data.append(row)
+
+        supabase.table("ahsa_jobs").upsert(upsert_data, on_conflict="id").execute()
+        print(f"✅ Synced {len(upsert_data)} AHSA jobs to Supabase (upserted/updated)")
+
+        return {
+            "success": True,
+            "count": len(upsert_data),
+            "message": f"Successfully pushed {len(upsert_data)} job(s) to Supabase",
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Error pushing AHSA jobs to Supabase: {error_msg}")
+        if "relation" in error_msg.lower() or "does not exist" in error_msg.lower():
+            error_msg = 'Supabase table "ahsa_jobs" does not exist. Please create it first.'
+        elif "permission" in error_msg.lower() or "unauthorized" in error_msg.lower():
+            error_msg = "Supabase authentication failed. Check your service_role key."
+        return {"success": False, "count": 0, "error": error_msg}
+
+@app.route('/api/ahsa/push-to-supabase', methods=['POST'])
+def api_ahsa_push_to_supabase():
+    """API endpoint to fetch AHSA jobs and push them to Supabase"""
+    try:
+        # First fetch jobs
+        jobs = fetch_ahsa_jobs()
+        
+        if not jobs or len(jobs) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'No jobs found to push',
+                'count': 0
+            }), 400
+        
+        # Push to Supabase
+        result = push_ahsa_jobs_to_supabase(jobs)
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ API error: {error_msg}")
+        return jsonify({
+            'success': False,
+            'error': error_msg,
+            'count': 0
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
