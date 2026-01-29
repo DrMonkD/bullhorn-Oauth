@@ -532,11 +532,11 @@ ANALYTICS_TEMPLATE = '''
                         }
                     } else if (viewMode === 'notes_by_user') {
                         const res = await fetch('/api/analytics/notes-by-user?' + q);
+                        const data = await res.json().catch(function(){ return {}; });
                         if (res.ok) {
-                            const data = await res.json();
                             setNotesByUserData(data.notesByUser || []);
                         } else {
-                            throw new Error('Failed to fetch notes by user');
+                            throw new Error(data.error || 'Failed to fetch notes by user');
                         }
                     }
                 } catch (err) {
@@ -2315,31 +2315,45 @@ def fetch_placements(start_ms, end_ms, include_recruiter=True):
 def fetch_notes(start_ms, end_ms):
     """
     Fetch Note records from Bullhorn (notes added in date range).
-    Returns list of notes with id, dateAdded, commentingPerson(id,firstName,lastName), action.
-    Bullhorn entity: Note. Field commentingPerson = user who created the note.
+    Returns (list_of_notes, None) on success or (None, error_message) on failure.
+    Bullhorn uses entity name NoteEntity for query/entity (per REST docs). Field commentingPerson = user who created the note.
     """
     tokens = load_tokens()
     if not tokens or not tokens.get('bh_rest_token'):
-        return None
-    try:
-        rest_url = tokens['rest_url']
-        if not rest_url.endswith('/'):
-            rest_url += '/'
-        url = f"{rest_url}query/Note"
-        params = {
-            'BhRestToken': tokens['bh_rest_token'],
-            'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
-            'fields': 'id,dateAdded,commentingPerson(id,firstName,lastName),action',
-            'orderBy': '-dateAdded',
-            'count': 2000
-        }
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data.get('data', [])
-    except Exception as e:
-        print(f"Error fetching Notes: {e}")
-        return None
+        return (None, "Not authenticated (no BhRestToken)")
+    rest_url = tokens['rest_url']
+    if not rest_url.endswith('/'):
+        rest_url += '/'
+    params = {
+        'BhRestToken': tokens['bh_rest_token'],
+        'where': f"dateAdded>={start_ms} AND dateAdded<={end_ms}",
+        'fields': 'id,dateAdded,commentingPerson(id,firstName,lastName),action',
+        'orderBy': '-dateAdded',
+        'count': 2000
+    }
+    # Try NoteEntity first (entity name per Bullhorn REST API DELETE example)
+    for entity_name in ('NoteEntity', 'Note'):
+        try:
+            url = f"{rest_url}query/{entity_name}"
+            response = requests.get(url, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                return (data.get('data', []), None)
+            err_body = (response.text or "")[:500]
+            msg = f"Bullhorn {response.status_code} ({entity_name}): {err_body}"
+            print(f"Error fetching Notes ({entity_name}): {msg}")
+            if response.status_code == 404:
+                continue
+            return (None, msg)
+        except requests.exceptions.RequestException as e:
+            msg = f"Request error ({entity_name}): {e!s}"
+            print(f"Error fetching Notes: {msg}")
+            return (None, msg)
+        except Exception as e:
+            msg = f"Error ({entity_name}): {e!s}"
+            print(f"Error fetching Notes: {msg}")
+            return (None, msg)
+    return (None, "Bullhorn returned 404 for both NoteEntity and Note. Your tenant may use a different entity name for notes.")
 
 def get_recruiter_name(item):
     """Extract recruiter name from sendingUser (JobSubmission) or owner (Placement) field."""
@@ -3190,11 +3204,11 @@ def api_analytics_notes_by_user():
         return jsonify({'error': 'Not authenticated'}), 401
     start_ms, end_ms = parse_date_range_from_request()
     try:
-        notes = fetch_notes(start_ms, end_ms)
-        if notes is None:
-            return jsonify({'error': 'Failed to fetch notes from Bullhorn'}), 500
+        notes, err = fetch_notes(start_ms, end_ms)
+        if err is not None:
+            return jsonify({'error': err}), 500
         user_map = {}
-        for n in notes:
+        for n in (notes or []):
             person = n.get('commentingPerson') or {}
             uid = person.get('id')
             name = f"{person.get('firstName', '')} {person.get('lastName', '')}".strip() or "Unknown"
